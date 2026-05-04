@@ -1,19 +1,27 @@
 const std = @import("std");
+const zon = @import("build.zig.zon");
 
 pub fn build(b: *std.Build) void {
+    const name = @tagName(zon.name);
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const exe = b.addExecutable(.{
-        .name = "zig_mcp",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/main.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-            },
-        }),
+    const config = b.addModule("config", .{
+        .root_source_file = b.path("build.zig.zon"),
     });
+
+    const main = b.addModule(name, .{
+        .optimize = optimize,
+        .target = target,
+        .root_source_file = b.path("src/main.zig"),
+    });
+
+    const exe = b.addExecutable(.{
+        .name = name,
+        .root_module = main,
+    });
+
+    exe.root_module.addImport("config", config);
 
     b.installArtifact(exe);
 
