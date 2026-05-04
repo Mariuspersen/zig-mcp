@@ -15,18 +15,6 @@ const hash = std.hash.Crc32.hash;
 const PROTOCOL_VERSION = "2025-06-18";
 const JSONRPC = "2.0";
 
-const RES_FMT =
-    \\{{
-    \\  "jsonrpc": "2.0",
-    \\  "id": {d},
-    \\  "result": {{
-    \\    "protocolVersion": "2025-06-18",
-    \\    "capabilities": {{"tools": {{}}}},
-    \\    "serverInfo": {{"name": "your-server", "version": "1.0"}}
-    \\  }}
-    \\}}
-;
-
 const MethodJson = struct {
     method: []const u8,
 };
