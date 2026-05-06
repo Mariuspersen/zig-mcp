@@ -283,16 +283,6 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
         .result = .{
             .tools = &[_]ToolEntry{
                 ToolEntry{
-                    .name = "hello_world",
-                    .description = "Returns the words Hello World",
-                    .title = "Hello World!",
-                    .inputSchema = .{
-                        .required = &.{},
-                        .type = "object",
-                        .properties = .{},
-                    },
-                },
-                ToolEntry{
                     .name = "arithmetic",
                     .description = "Performs arithmetic (add, subtract, multiply, divide, sqrt)",
                     .title = "Arithmetic",
@@ -442,7 +432,6 @@ fn handleCallTools(w: *Writer, alloc: Allocator, io: Io, body: []u8, table: *Dat
     const id = methodJson.value.id;
 
     const res = switch (hash_method) {
-        hash("hello_world") => handleHelloWorld(w, body, alloc),
         hash("arithmetic") => handleArithmetic(w, body, alloc),
         hash("file_write") => handleWrite(w, alloc, body, table),
         hash("file_append") => handleAppend(w, alloc, body, table),
@@ -515,25 +504,6 @@ fn handleArithmetic(w: *Writer, body: []u8, alloc: Allocator) !void {
     var res_json_struct_fmt = json.fmt(response_json, .{
         .emit_null_optional_fields = false,
     });
-    try res_json_struct_fmt.format(w);
-}
-
-fn handleHelloWorld(w: *Writer, body: []u8, alloc: Allocator) !void {
-    const parsedBody = try json.parseFromSlice(ToolsReqJson, alloc, body, .{});
-    defer parsedBody.deinit();
-
-    const hello_world_json_res = ToolReturnResponse{
-        .id = parsedBody.value.id,
-        .result = .{
-            .content = &[_]ContentType{
-                .{
-                    .type = "text",
-                    .text = "Hello, world!",
-                },
-            },
-        },
-    };
-    var res_json_struct_fmt = json.fmt(hello_world_json_res, .{});
     try res_json_struct_fmt.format(w);
 }
 
