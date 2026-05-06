@@ -4,6 +4,8 @@ const http = std.http;
 const json = std.json;
 const Io = std.Io;
 const net = Io.net;
+const time = std.time;
+const epoch = time.epoch;
 
 const Writer = Io.Writer;
 const Allocator = std.mem.Allocator;
@@ -242,6 +244,7 @@ fn handleConnection(alloc: Allocator, s: net.Stream, io: Io, table: *DataHashTab
         hash("tools/call") => try handleCallTools(
             &res_writer.writer,
             alloc,
+            io,
             body,
             table,
         ),
@@ -305,7 +308,7 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
                 },
                 ToolEntry{
                     .name = "file_write",
-                    .description = "Write text to a file given a filename",
+                    .description = "Write text to a file",
                     .title = "File Write",
                     .inputSchema = .{
                         .type = "object",
@@ -313,9 +316,35 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
                         .properties = .{
                             .filename = .{},
                             .content = .{},
+                        },
+                    },
+                },
+                ToolEntry{
+                    .name = "file_append",
+                    .description = "Append text to a end of a file",
+                    .title = "File Append",
+                    .inputSchema = .{
+                        .type = "object",
+                        .required = &.{ "filename", "content" },
+                        .properties = .{
+                            .filename = .{},
+                            .content = .{},
+                        },
+                    },
+                },
+                ToolEntry{
+                    .name = "file_insert",
+                    .description = "Insert text at a index in a file",
+                    .title = "File Insert",
+                    .inputSchema = .{
+                        .type = "object",
+                        .required = &.{ "filename", "content" },
+                        .properties = .{
+                            .filename = .{},
+                            .content = .{},
                             .start = .{
-                                .description = "Start index from where to write",
-                            },
+                                .description = "Index of where to insert"
+                            }
                         },
                     },
                 },
@@ -344,31 +373,53 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
                     },
                 },
                 ToolEntry{
+                    .name = "file_size",
+                    .description = "Returns the size of a file",
+                    .title = "File Size",
+                    .inputSchema = .{
+                        .type = "object",
+                        .required = &.{},
+                        .properties = .{
+                            .filename = .{},
+                        },
+                    },
+                },
+                ToolEntry{
+                    .name = "file_delete",
+                    .description = "Delete a file",
+                    .title = "File Delete",
+                    .inputSchema = .{
+                        .type = "object",
+                        .required = &.{},
+                        .properties = .{
+                            .filename = .{},
+                        },
+                    },
+                },
+                ToolEntry{
                     .name = "file_search",
                     .description = "Returns a index into a file",
                     .title = "File Search",
                     .inputSchema = .{
                         .type = "object",
-                        .required = &.{ "filename", "substring" },
+                        .required = &.{ "filename", "content" },
                         .properties = .{
                             .filename = .{},
-                            .substring = .{},
+                            .content = .{
+                                .description = "content to search for",
+                            },
                             .start = .{},
                         },
                     },
                 },
                 ToolEntry{
-                    .name = "unix_timestamp",
-                    .description = "Returns the unix timestamp",
+                    .name = "date_time",
+                    .description = "Returns the date and time",
                     .title = "Unix Epoch Timestamp",
                     .inputSchema = .{
                         .type = "object",
-                        .required = &.{ "filename", "substring" },
-                        .properties = .{
-                            .filename = .{},
-                            .substring = .{},
-                            .start = .{},
-                        },
+                        .required = &.{},
+                        .properties = .{},
                     },
                 },
             },
@@ -381,7 +432,7 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
     try res_json_struct_fmt.format(w);
 }
 
-fn handleCallTools(w: *Writer, alloc: Allocator, body: []u8, table: *DataHashTable) !void {
+fn handleCallTools(w: *Writer, alloc: Allocator, io: Io, body: []u8, table: *DataHashTable) !void {
     const methodJson = try json.parseFromSlice(ToolNameReq, alloc, body, .{
         .ignore_unknown_fields = true,
     });
@@ -394,9 +445,14 @@ fn handleCallTools(w: *Writer, alloc: Allocator, body: []u8, table: *DataHashTab
         hash("hello_world") => handleHelloWorld(w, body, alloc),
         hash("arithmetic") => handleArithmetic(w, body, alloc),
         hash("file_write") => handleWrite(w, alloc, body, table),
+        hash("file_append") => handleAppend(w, alloc, body, table),
+        hash("file_insert") => handleInsert(w, alloc, body, table),
         hash("file_read") => handleRead(w, alloc, body, table),
         hash("file_list") => handleListFiles(w, alloc, body, table),
+        hash("file_size") => handleFileSize(w, alloc, body, table),
+        hash("file_delete") => handleFileDelete(w, alloc, body, table),
         hash("file_search") => handleFileSearch(w, alloc, body, table),
+        hash("date_time") => handleDateTime(w, alloc, io, body),
         else => handleErrorResponse(w, error.NoSuchMethod, id, alloc),
     };
     res catch |e| {
@@ -494,17 +550,155 @@ fn handleWrite(w: *Writer, alloc: Allocator, body: []u8, data: *DataHashTable) !
 
     try data.put(try alloc.dupe(u8, filename), try .initCapacity(alloc, content.len));
     const arr = data.getPtr(filename) orelse return error.SomethingVeryFuckedUpHappened;
-    if (parsed_json.params.arguments.start) |start| {
-        if (start > arr.items.len) return error.OutOfBounds;
-        try arr.insertSlice(alloc, start, content);
-    } else {
-        try arr.appendSlice(alloc, content);
-    }
+    arr.clearRetainingCapacity();
+    try arr.appendSlice(alloc, content);
 
     var response_text = Io.Writer.Allocating.init(alloc);
     defer response_text.deinit();
 
     try response_text.writer.print("{d} characters written to {s}", .{ content.len, filename });
+
+    const json_res = ToolReturnResponse{
+        .id = parsed_body.value.id,
+        .result = .{
+            .content = &[_]ContentType{
+                .{
+                    .type = "text",
+                    .text = response_text.written(),
+                },
+            },
+        },
+    };
+    var res_json_struct_fmt = json.fmt(json_res, .{
+        .emit_null_optional_fields = false,
+    });
+    try res_json_struct_fmt.format(w);
+}
+
+fn handleAppend(w: *Writer, alloc: Allocator, body: []u8, data: *DataHashTable) !void {
+    const parsed_body = try json.parseFromSlice(ToolsReqJson, alloc, body, .{
+        .ignore_unknown_fields = true,
+    });
+    defer parsed_body.deinit();
+
+    const parsed_json: ToolsReqJson = parsed_body.value;
+
+    const filename = parsed_json.params.arguments.filename orelse return error.MissingFilename;
+    const content = parsed_json.params.arguments.content orelse return error.MissingContent;
+
+    const arr = data.getPtr(filename) orelse return error.SomethingVeryFuckedUpHappened;
+    try arr.appendSlice(alloc, content);
+
+    var response_text = Io.Writer.Allocating.init(alloc);
+    defer response_text.deinit();
+
+    try response_text.writer.print("{d} characters appended to {s}", .{ content.len, filename });
+
+    const json_res = ToolReturnResponse{
+        .id = parsed_body.value.id,
+        .result = .{
+            .content = &[_]ContentType{
+                .{
+                    .type = "text",
+                    .text = response_text.written(),
+                },
+            },
+        },
+    };
+    var res_json_struct_fmt = json.fmt(json_res, .{
+        .emit_null_optional_fields = false,
+    });
+    try res_json_struct_fmt.format(w);
+}
+
+fn handleInsert(w: *Writer, alloc: Allocator, body: []u8, data: *DataHashTable) !void {
+    const parsed_body = try json.parseFromSlice(ToolsReqJson, alloc, body, .{
+        .ignore_unknown_fields = true,
+    });
+    defer parsed_body.deinit();
+
+    const parsed_json: ToolsReqJson = parsed_body.value;
+
+    const filename = parsed_json.params.arguments.filename orelse return error.MissingFilename;
+    const content = parsed_json.params.arguments.content orelse return error.MissingContent;
+    const start = parsed_json.params.arguments.start orelse return error.MissingStart;
+
+    const arr = data.getPtr(filename) orelse return error.FileNotFound;
+    if (start > arr.items.len) return error.OutofBounds;
+    try arr.insertSlice(alloc, start, content);
+
+    var response_text = Io.Writer.Allocating.init(alloc);
+    defer response_text.deinit();
+
+    try response_text.writer.print("{d} characters written to {s} at index {d}", .{ content.len, filename, start });
+
+    const json_res = ToolReturnResponse{
+        .id = parsed_body.value.id,
+        .result = .{
+            .content = &[_]ContentType{
+                .{
+                    .type = "text",
+                    .text = response_text.written(),
+                },
+            },
+        },
+    };
+    var res_json_struct_fmt = json.fmt(json_res, .{
+        .emit_null_optional_fields = false,
+    });
+    try res_json_struct_fmt.format(w);
+}
+
+fn handleFileDelete(w: *Writer, alloc: Allocator, body: []u8, data: *DataHashTable) !void {
+    const parsed_body = try json.parseFromSlice(ToolsReqJson, alloc, body, .{
+        .ignore_unknown_fields = true,
+    });
+    defer parsed_body.deinit();
+
+    const parsed_json: ToolsReqJson = parsed_body.value;
+
+    const filename = parsed_json.params.arguments.filename orelse return error.MissingFilename;
+    const entry = data.getEntry(filename) orelse return error.FileNotFound;
+    alloc.free(entry.key_ptr.*);
+    entry.value_ptr.deinit(alloc);
+
+    var response_text = Io.Writer.Allocating.init(alloc);
+    defer response_text.deinit();
+
+    try response_text.writer.print("{s} deleted", .{ filename });
+
+    const json_res = ToolReturnResponse{
+        .id = parsed_body.value.id,
+        .result = .{
+            .content = &[_]ContentType{
+                .{
+                    .type = "text",
+                    .text = response_text.written(),
+                },
+            },
+        },
+    };
+    var res_json_struct_fmt = json.fmt(json_res, .{
+        .emit_null_optional_fields = false,
+    });
+    try res_json_struct_fmt.format(w);
+}
+
+fn handleFileSize(w: *Writer, alloc: Allocator, body: []u8, data: *DataHashTable) !void {
+    const parsed_body = try json.parseFromSlice(ToolsReqJson, alloc, body, .{
+        .ignore_unknown_fields = true,
+    });
+    defer parsed_body.deinit();
+
+    const parsed_json: ToolsReqJson = parsed_body.value;
+
+    const filename = parsed_json.params.arguments.filename orelse return error.MissingFilename;
+    const arr = data.getPtr(filename) orelse return error.FileNotFound;
+
+    var response_text = Io.Writer.Allocating.init(alloc);
+    defer response_text.deinit();
+
+    try response_text.writer.print("{d}", .{ arr.items.len });
 
     const json_res = ToolReturnResponse{
         .id = parsed_body.value.id,
@@ -532,13 +726,7 @@ fn handleRead(w: *Writer, alloc: Allocator, body: []u8, data: *DataHashTable) !v
     const parsed_json: ToolsReqJson = parsed_body.value;
 
     const filename = parsed_json.params.arguments.filename orelse return error.MissingFilename;
-
-    var it = data.iterator();
-    while (it.next()) |entry| {
-        std.debug.print("\"{s}\" => \"{s}\"\n", .{ entry.key_ptr.*, entry.value_ptr.items });
-    }
-
-    const arr = data.get(filename) orelse return error.FileNotFound;
+    const arr = data.getPtr(filename) orelse return error.FileNotFound;
 
     const start = parsed_json.params.arguments.start;
     const length = parsed_json.params.arguments.length;
@@ -589,7 +777,7 @@ fn handleFileSearch(w: *Writer, alloc: Allocator, body: []u8, data: *DataHashTab
     const parsed_json: ToolsReqJson = parsed_body.value;
 
     const filename = parsed_json.params.arguments.filename orelse return error.MissingFilename;
-    const substring = parsed_json.params.arguments.filename orelse return error.MissingSubstring;
+    const substring = parsed_json.params.arguments.content orelse return error.MissingSubstring;
     const start = parsed_json.params.arguments.start orelse 0;
     const arr = data.get(filename) orelse return error.FileNotFound;
 
@@ -598,6 +786,50 @@ fn handleFileSearch(w: *Writer, alloc: Allocator, body: []u8, data: *DataHashTab
     } else {
         try response.writer.print("Could not find \"{s}\" in \"{s}\"", .{ substring, filename });
     }
+
+    const json_res = ToolReturnResponse{
+        .id = parsed_body.value.id,
+        .result = .{
+            .content = &[_]ContentType{
+                .{
+                    .type = "text",
+                    .text = response.written(),
+                },
+            },
+        },
+    };
+
+    var res_json_struct_fmt = json.fmt(json_res, .{
+        .emit_null_optional_fields = false,
+    });
+    try res_json_struct_fmt.format(w);
+}
+
+fn handleDateTime(w: *Writer, alloc: Allocator, io: Io, body: []u8) !void {
+    const parsed_body = try json.parseFromSlice(ToolsReqJson, alloc, body, .{
+        .ignore_unknown_fields = true,
+    });
+    defer parsed_body.deinit();
+
+    var response = Io.Writer.Allocating.init(alloc);
+    defer response.deinit();
+
+    const now = std.Io.Clock.real.now(io);
+    const ts = now.toSeconds();
+    const es = epoch.EpochSeconds{ .secs = @intCast(ts) };
+    const ed = es.getEpochDay();
+    const yd = ed.calculateYearDay();
+    const md = yd.calculateMonthDay();
+    const ds = es.getDaySeconds();
+
+    try response.writer.print("{d:02} {s} {d} - {d:02}:{d:02}:{d:02}", .{
+        md.day_index,
+        @tagName(md.month),
+        yd.year,
+        ds.getHoursIntoDay(),
+        ds.getMinutesIntoHour(),
+        ds.getSecondsIntoMinute(),
+    });
 
     const json_res = ToolReturnResponse{
         .id = parsed_body.value.id,
@@ -629,6 +861,10 @@ fn handleListFiles(w: *Writer, alloc: Allocator, body: []u8, data: *DataHashTabl
     var it = data.keyIterator();
     while (it.next()) |filename| {
         try response.writer.print("{s}\n", .{filename.*});
+    }
+
+    if (response.written().len == 0) {
+        try response.writer.print("{{}}", .{});
     }
 
     const json_res = ToolReturnResponse{
