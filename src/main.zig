@@ -111,6 +111,10 @@ const ToolEntry = struct {
                 type: []const u8 = "string",
                 description: []const u8 = "Substring to find in file",
             } = null,
+            url: ?struct {
+                type: []const u8 = "string",
+                description: []const u8 = "URL to use",
+            } = null,
         },
     },
 };
@@ -135,6 +139,7 @@ const ToolsReqJson = struct {
             content: ?[]const u8 = null,
             start: ?usize = null,
             length: ?usize = null,
+            url: ?[]const u8 = null,
         },
     },
     jsonrpc: []const u8 = JSONRPC,
@@ -281,138 +286,131 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
     const res_json_struct = ToolsRes{
         .id = parsedBody.value.id,
         .result = .{
-            .tools = &[_]ToolEntry{
-                ToolEntry{
-                    .name = "arithmetic",
-                    .description = "Performs arithmetic (add, subtract, multiply, divide, sqrt)",
-                    .title = "Arithmetic",
-                    .inputSchema = .{
-                        .type = "object",
-                        .required = &.{"operation"},
-                        .properties = .{
-                            .a = .{},
-                            .b = .{},
-                            .operation = .{},
+            .tools = &[_]ToolEntry{ ToolEntry{
+                .name = "arithmetic",
+                .description = "Performs arithmetic (add, subtract, multiply, divide, sqrt)",
+                .title = "Arithmetic",
+                .inputSchema = .{
+                    .type = "object",
+                    .required = &.{"operation"},
+                    .properties = .{
+                        .a = .{},
+                        .b = .{},
+                        .operation = .{},
+                    },
+                },
+            }, ToolEntry{
+                .name = "file_write",
+                .description = "Write text to a file",
+                .title = "File Write",
+                .inputSchema = .{
+                    .type = "object",
+                    .required = &.{ "filename", "content" },
+                    .properties = .{
+                        .filename = .{},
+                        .content = .{},
+                    },
+                },
+            }, ToolEntry{
+                .name = "file_append",
+                .description = "Append text to a end of a file",
+                .title = "File Append",
+                .inputSchema = .{
+                    .type = "object",
+                    .required = &.{ "filename", "content" },
+                    .properties = .{
+                        .filename = .{},
+                        .content = .{},
+                    },
+                },
+            }, ToolEntry{
+                .name = "file_insert",
+                .description = "Insert text at a index in a file",
+                .title = "File Insert",
+                .inputSchema = .{
+                    .type = "object",
+                    .required = &.{ "filename", "content" },
+                    .properties = .{ .filename = .{}, .content = .{}, .start = .{ .description = "Index of where to insert" } },
+                },
+            }, ToolEntry{
+                .name = "file_read",
+                .description = "Read from a file given a filename",
+                .title = "File Read",
+                .inputSchema = .{
+                    .type = "object",
+                    .required = &.{"filename"},
+                    .properties = .{
+                        .filename = .{},
+                        .start = .{},
+                        .length = .{},
+                    },
+                },
+            }, ToolEntry{
+                .name = "file_list",
+                .description = "Returns a list of all available files",
+                .title = "File List",
+                .inputSchema = .{
+                    .type = "object",
+                    .required = &.{},
+                    .properties = .{},
+                },
+            }, ToolEntry{
+                .name = "file_size",
+                .description = "Returns the size of a file",
+                .title = "File Size",
+                .inputSchema = .{
+                    .type = "object",
+                    .required = &.{},
+                    .properties = .{
+                        .filename = .{},
+                    },
+                },
+            }, ToolEntry{
+                .name = "file_delete",
+                .description = "Delete a file",
+                .title = "File Delete",
+                .inputSchema = .{
+                    .type = "object",
+                    .required = &.{},
+                    .properties = .{
+                        .filename = .{},
+                    },
+                },
+            }, ToolEntry{
+                .name = "file_search",
+                .description = "Returns a index into a file",
+                .title = "File Search",
+                .inputSchema = .{
+                    .type = "object",
+                    .required = &.{ "filename", "content" },
+                    .properties = .{
+                        .filename = .{},
+                        .content = .{
+                            .description = "content to search for",
                         },
+                        .start = .{},
                     },
                 },
-                ToolEntry{
-                    .name = "file_write",
-                    .description = "Write text to a file",
-                    .title = "File Write",
-                    .inputSchema = .{
-                        .type = "object",
-                        .required = &.{ "filename", "content" },
-                        .properties = .{
-                            .filename = .{},
-                            .content = .{},
-                        },
+            }, ToolEntry{
+                .name = "date_time",
+                .description = "Returns the date and time",
+                .title = "Unix Epoch Timestamp",
+                .inputSchema = .{
+                    .type = "object",
+                    .required = &.{},
+                    .properties = .{},
+                },
+            }, ToolEntry{
+                .name = "web_request",
+                .description = "Given a URL, returns the body of the request",
+                .title = "Web Request",
+                .inputSchema = .{
+                    .required = &.{"url"},
+                    .properties = .{
+                        .url = .{},
                     },
                 },
-                ToolEntry{
-                    .name = "file_append",
-                    .description = "Append text to a end of a file",
-                    .title = "File Append",
-                    .inputSchema = .{
-                        .type = "object",
-                        .required = &.{ "filename", "content" },
-                        .properties = .{
-                            .filename = .{},
-                            .content = .{},
-                        },
-                    },
-                },
-                ToolEntry{
-                    .name = "file_insert",
-                    .description = "Insert text at a index in a file",
-                    .title = "File Insert",
-                    .inputSchema = .{
-                        .type = "object",
-                        .required = &.{ "filename", "content" },
-                        .properties = .{
-                            .filename = .{},
-                            .content = .{},
-                            .start = .{
-                                .description = "Index of where to insert"
-                            }
-                        },
-                    },
-                },
-                ToolEntry{
-                    .name = "file_read",
-                    .description = "Read from a file given a filename",
-                    .title = "File Read",
-                    .inputSchema = .{
-                        .type = "object",
-                        .required = &.{"filename"},
-                        .properties = .{
-                            .filename = .{},
-                            .start = .{},
-                            .length = .{},
-                        },
-                    },
-                },
-                ToolEntry{
-                    .name = "file_list",
-                    .description = "Returns a list of all available files",
-                    .title = "File List",
-                    .inputSchema = .{
-                        .type = "object",
-                        .required = &.{},
-                        .properties = .{},
-                    },
-                },
-                ToolEntry{
-                    .name = "file_size",
-                    .description = "Returns the size of a file",
-                    .title = "File Size",
-                    .inputSchema = .{
-                        .type = "object",
-                        .required = &.{},
-                        .properties = .{
-                            .filename = .{},
-                        },
-                    },
-                },
-                ToolEntry{
-                    .name = "file_delete",
-                    .description = "Delete a file",
-                    .title = "File Delete",
-                    .inputSchema = .{
-                        .type = "object",
-                        .required = &.{},
-                        .properties = .{
-                            .filename = .{},
-                        },
-                    },
-                },
-                ToolEntry{
-                    .name = "file_search",
-                    .description = "Returns a index into a file",
-                    .title = "File Search",
-                    .inputSchema = .{
-                        .type = "object",
-                        .required = &.{ "filename", "content" },
-                        .properties = .{
-                            .filename = .{},
-                            .content = .{
-                                .description = "content to search for",
-                            },
-                            .start = .{},
-                        },
-                    },
-                },
-                ToolEntry{
-                    .name = "date_time",
-                    .description = "Returns the date and time",
-                    .title = "Unix Epoch Timestamp",
-                    .inputSchema = .{
-                        .type = "object",
-                        .required = &.{},
-                        .properties = .{},
-                    },
-                },
-            },
+            } },
         },
     };
 
@@ -442,6 +440,7 @@ fn handleCallTools(w: *Writer, alloc: Allocator, io: Io, body: []u8, table: *Dat
         hash("file_delete") => handleFileDelete(w, alloc, body, table),
         hash("file_search") => handleFileSearch(w, alloc, body, table),
         hash("date_time") => handleDateTime(w, alloc, io, body),
+        hash("web_request") => handleWebRequest(w, alloc, io, body),
         else => handleErrorResponse(w, error.NoSuchMethod, id, alloc),
     };
     res catch |e| {
@@ -635,7 +634,7 @@ fn handleFileDelete(w: *Writer, alloc: Allocator, body: []u8, data: *DataHashTab
     var response_text = Io.Writer.Allocating.init(alloc);
     defer response_text.deinit();
 
-    try response_text.writer.print("{s} deleted", .{ filename });
+    try response_text.writer.print("{s} deleted", .{filename});
 
     const json_res = ToolReturnResponse{
         .id = parsed_body.value.id,
@@ -668,7 +667,7 @@ fn handleFileSize(w: *Writer, alloc: Allocator, body: []u8, data: *DataHashTable
     var response_text = Io.Writer.Allocating.init(alloc);
     defer response_text.deinit();
 
-    try response_text.writer.print("{d}", .{ arr.items.len });
+    try response_text.writer.print("{d}", .{arr.items.len});
 
     const json_res = ToolReturnResponse{
         .id = parsed_body.value.id,
@@ -800,6 +799,52 @@ fn handleDateTime(w: *Writer, alloc: Allocator, io: Io, body: []u8) !void {
         ds.getMinutesIntoHour(),
         ds.getSecondsIntoMinute(),
     });
+
+    const json_res = ToolReturnResponse{
+        .id = parsed_body.value.id,
+        .result = .{
+            .content = &[_]ContentType{
+                .{
+                    .type = "text",
+                    .text = response.written(),
+                },
+            },
+        },
+    };
+
+    var res_json_struct_fmt = json.fmt(json_res, .{
+        .emit_null_optional_fields = false,
+    });
+    try res_json_struct_fmt.format(w);
+}
+
+fn handleWebRequest(w: *Writer, alloc: Allocator, io: Io, body: []u8) !void {
+    const parsed_body = try json.parseFromSlice(ToolsReqJson, alloc, body, .{
+        .ignore_unknown_fields = true,
+    });
+    defer parsed_body.deinit();
+
+    const parsed_json: ToolsReqJson = parsed_body.value;
+
+    const url = parsed_json.params.arguments.url orelse return error.MissingUrl;
+    var client = std.http.Client{
+        .allocator = alloc,
+        .io = io,
+    };
+    defer client.deinit();
+
+    var response = Io.Writer.Allocating.init(alloc);
+    defer response.deinit();
+
+    const res = try client.fetch(.{
+        .location = .{
+            .url = url,
+        },
+        .method = .GET,
+        .response_writer = &response.writer,
+    });
+
+    try response.writer.print("\nSTATUS: {d} {s}", .{ @intFromEnum(res.status), @tagName(res.status) });
 
     const json_res = ToolReturnResponse{
         .id = parsed_body.value.id,
