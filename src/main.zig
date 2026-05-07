@@ -14,8 +14,9 @@ const IpAddress = net.IpAddress;
 
 const hash = std.hash.Crc32.hash;
 
-const PROTOCOL_VERSION = "2025-06-18";
-const JSONRPC = "2.0";
+const PROTOCOL_VERSION = Config.PROTOCOL_VERSION;
+const JSONRPC = Config.JSONRPC;
+
 const OPTIONS = json.Stringify.Options{
     .emit_nonportable_numbers_as_strings = true,
     .emit_null_optional_fields = false,
@@ -24,163 +25,17 @@ const OPTIONS = json.Stringify.Options{
     .emit_strings_as_arrays = false,
 };
 
-const MethodJson = struct {
-    method: []const u8,
-};
-
-const ToolNameReq = struct {
-    method: []const u8,
-    params: struct {
-        name: []const u8,
-    },
-    jsonrpc: []const u8 = JSONRPC,
-    id: usize,
-};
-
-const InitResStruct = struct {
-    jsonrpc: []const u8 = JSONRPC,
-    id: usize,
-    result: struct {
-        protocolVersion: []const u8 = PROTOCOL_VERSION,
-        capabilities: struct {
-            tools: struct {} = .{},
-        },
-        serverInfo: struct {
-            name: []const u8 = @tagName(Config.name),
-            version: []const u8 = Config.version,
-        },
-    },
-};
-
-const InitReqStruct = struct {
-    method: []const u8,
-    params: struct {
-        protocolVersion: []const u8,
-        capabilities: struct {
-            tools: struct {
-                listChanged: bool,
-            },
-        },
-        clientInfo: struct {
-            name: []const u8,
-            version: []const u8,
-        },
-    },
-    jsonrpc: []const u8 = JSONRPC,
-    id: usize,
-};
-
-const Tools = struct {
-    method: []const u8,
-    jsonrpc: []const u8 = JSONRPC,
-    id: usize,
-};
-
-const ToolEntry = struct {
-    name: []const u8,
-    title: []const u8,
-    description: []const u8,
-    inputSchema: struct {
-        type: []const u8 = "object",
-        required: []const []const u8,
-        properties: struct {
-            operation: ?struct {
-                type: []const u8 = "string",
-                description: []const u8 = "add, subtract, multiply, divide, sqrt",
-            } = null,
-            a: ?struct {
-                type: []const u8 = "number",
-                description: []const u8 = "First number",
-            } = null,
-            b: ?struct {
-                type: []const u8 = "number",
-                description: []const u8 = "Second number",
-            } = null,
-            start: ?struct {
-                type: []const u8 = "number",
-                description: []const u8 = "Start index from where to read the file",
-            } = null,
-            length: ?struct {
-                type: []const u8 = "number",
-                description: []const u8 = "How many characters from start to read",
-            } = null,
-            filename: ?struct {
-                type: []const u8 = "string",
-                description: []const u8 = "Name of the file",
-            } = null,
-            content: ?struct {
-                type: []const u8 = "string",
-                description: []const u8 = "Content to be put in file",
-            } = null,
-            substring: ?struct {
-                type: []const u8 = "string",
-                description: []const u8 = "Substring to find in file",
-            } = null,
-            url: ?struct {
-                type: []const u8 = "string",
-                description: []const u8 = "URL to use",
-            } = null,
-            arguments: ?struct {
-                type: []const u8 = "array",
-                items: struct {
-                    type: []const u8 = "string",
-                } = .{},
-                description: []const u8 = "Arguments to use",
-            } = null,
-        },
-    },
-};
-
-const ToolsRes = struct {
-    jsonrpc: []const u8 = JSONRPC,
-    id: usize,
-    result: struct {
-        tools: []const ToolEntry,
-    },
-};
-
-const ToolsReqJson = struct {
-    method: []const u8,
-    params: struct {
-        name: []const u8,
-        arguments: struct {
-            operation: ?[]const u8 = null,
-            a: ?f64 = null,
-            b: ?f64 = null,
-            filename: ?[]const u8 = null,
-            content: ?[]const u8 = null,
-            start: ?usize = null,
-            length: ?usize = null,
-            url: ?[]const u8 = null,
-            arguments: ?[]const []const u8 = null,
-        },
-    },
-    jsonrpc: []const u8 = JSONRPC,
-    id: usize,
-};
-
-const ContentType = struct {
-    type: []const u8,
-    text: []const u8,
-};
-
-const ToolReturnResponse = struct {
-    jsonrpc: []const u8 = JSONRPC,
-    id: usize,
-    result: struct {
-        content: []const ContentType,
-        isError: ?bool = null,
-    },
-};
-
-const ProtocolError = struct {
-    jsonrpc: []const u8 = JSONRPC,
-    id: usize,
-    @"error": struct {
-        code: i32,
-        message: []const u8,
-    },
-};
+const MethodJson = @import("method_only.zig");
+const ToolNameReq = @import("tool_name_req.zig");
+const InitResponse = @import("init_response.zig");
+const InitRequest = @import("init_request.zig");
+const WhichTool = @import("which_tool.zig");
+const ToolEntry = @import("tool_entry.zig");
+const ToolResponse = @import("tool_response.zig");
+const ToolRequest = @import("tool_request.zig");
+const ContentType = @import("content_type.zig");
+const ToolResult = @import("tool_result.zig");
+const ProtocolError = @import("protocol_error.zig");
 
 pub fn main(init: std.process.Init) !void {
     const alloc = init.gpa;
@@ -274,12 +129,12 @@ fn handleConnection(alloc: Allocator, s: net.Stream, io: Io, dir: Io.Dir) !void 
 }
 
 fn handleInitialize(w: *Writer, body: []u8, alloc: Allocator) !void {
-    const parsedBody = try json.parseFromSlice(InitReqStruct, alloc, body, .{});
+    const parsedBody = try json.parseFromSlice(InitRequest, alloc, body, .{});
     defer parsedBody.deinit();
 
-    const req_json: InitReqStruct = parsedBody.value;
+    const req_json: InitRequest = parsedBody.value;
 
-    const init_res_json = InitResStruct{
+    const init_res_json = InitResponse{
         .id = req_json.id,
         .result = .{
             .capabilities = .{},
@@ -291,10 +146,10 @@ fn handleInitialize(w: *Writer, body: []u8, alloc: Allocator) !void {
 }
 
 fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
-    const parsedBody = try json.parseFromSlice(Tools, alloc, body, .{});
+    const parsedBody = try json.parseFromSlice(WhichTool, alloc, body, .{});
     defer parsedBody.deinit();
 
-    const res_json_struct = ToolsRes{
+    const res_json_struct = ToolResponse{
         .id = parsedBody.value.id,
         .result = .{
             .tools = &[_]ToolEntry{
@@ -415,7 +270,7 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
                 ToolEntry{
                     .name = "date_time",
                     .description = "Returns the date and time",
-                    .title = "Unix Epoch Timestamp",
+                    .title = "Date and Time",
                     .inputSchema = .{
                         .type = "object",
                         .required = &.{},
@@ -484,12 +339,12 @@ fn handleCallTools(w: *Writer, alloc: Allocator, io: Io, body: []u8, dir: Io.Dir
 }
 
 fn handleArithmetic(w: *Writer, body: []u8, alloc: Allocator) !void {
-    const parsedBody = try json.parseFromSlice(ToolsReqJson, alloc, body, .{
+    const parsedBody = try json.parseFromSlice(ToolRequest, alloc, body, .{
         .ignore_unknown_fields = true,
     });
     defer parsedBody.deinit();
 
-    const parsed_json: ToolsReqJson = parsedBody.value;
+    const parsed_json: ToolRequest = parsedBody.value;
     var response_text = Io.Writer.Allocating.init(alloc);
     defer response_text.deinit();
 
@@ -524,7 +379,7 @@ fn handleArithmetic(w: *Writer, body: []u8, alloc: Allocator) !void {
         else => return error.UnknownOperator,
     }
 
-    const response_json = ToolReturnResponse{
+    const response_json = ToolResult{
         .id = parsed_json.id,
         .result = .{
             .content = &[_]ContentType{
@@ -542,12 +397,12 @@ fn handleArithmetic(w: *Writer, body: []u8, alloc: Allocator) !void {
 }
 
 fn handleWrite(w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u8) !void {
-    const parsed_body = try json.parseFromSlice(ToolsReqJson, alloc, body, .{
+    const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, .{
         .ignore_unknown_fields = true,
     });
     defer parsed_body.deinit();
 
-    const parsed_json: ToolsReqJson = parsed_body.value;
+    const parsed_json: ToolRequest = parsed_body.value;
 
     const filename = parsed_json.params.arguments.filename orelse return error.MissingFilename;
     const content = parsed_json.params.arguments.content orelse return error.MissingContent;
@@ -563,7 +418,7 @@ fn handleWrite(w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u8) !v
 
     try response_text.writer.print("{d} characters written to {s}", .{ content.len, filename });
 
-    const json_res = ToolReturnResponse{
+    const json_res = ToolResult{
         .id = parsed_body.value.id,
         .result = .{
             .content = &[_]ContentType{
@@ -579,12 +434,12 @@ fn handleWrite(w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u8) !v
 }
 
 fn handleAppend(w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u8) !void {
-    const parsed_body = try json.parseFromSlice(ToolsReqJson, alloc, body, .{
+    const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, .{
         .ignore_unknown_fields = true,
     });
     defer parsed_body.deinit();
 
-    const parsed_json: ToolsReqJson = parsed_body.value;
+    const parsed_json: ToolRequest = parsed_body.value;
 
     const filename = parsed_json.params.arguments.filename orelse return error.MissingFilename;
     const content = parsed_json.params.arguments.content orelse return error.MissingContent;
@@ -599,7 +454,7 @@ fn handleAppend(w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u8) !
 
     try response_text.writer.print("{d} characters appended to {s}", .{ content.len, filename });
 
-    const json_res = ToolReturnResponse{
+    const json_res = ToolResult{
         .id = parsed_body.value.id,
         .result = .{
             .content = &[_]ContentType{
@@ -617,12 +472,12 @@ fn handleAppend(w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u8) !
 }
 
 fn handleInsert(w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u8) !void {
-    const parsed_body = try json.parseFromSlice(ToolsReqJson, alloc, body, .{
+    const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, .{
         .ignore_unknown_fields = true,
     });
     defer parsed_body.deinit();
 
-    const parsed_json: ToolsReqJson = parsed_body.value;
+    const parsed_json: ToolRequest = parsed_body.value;
 
     const filename = parsed_json.params.arguments.filename orelse return error.MissingFilename;
     const content = parsed_json.params.arguments.content orelse return error.MissingContent;
@@ -638,7 +493,7 @@ fn handleInsert(w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u8) !
 
     try response_text.writer.print("{d} characters written to {s} at index {d}", .{ content.len, filename, start });
 
-    const json_res = ToolReturnResponse{
+    const json_res = ToolResult{
         .id = parsed_body.value.id,
         .result = .{
             .content = &[_]ContentType{
@@ -654,12 +509,12 @@ fn handleInsert(w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u8) !
 }
 
 fn handleFileDelete(w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u8) !void {
-    const parsed_body = try json.parseFromSlice(ToolsReqJson, alloc, body, .{
+    const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, .{
         .ignore_unknown_fields = true,
     });
     defer parsed_body.deinit();
 
-    const parsed_json: ToolsReqJson = parsed_body.value;
+    const parsed_json: ToolRequest = parsed_body.value;
 
     const filename = parsed_json.params.arguments.filename orelse return error.MissingFilename;
 
@@ -670,7 +525,7 @@ fn handleFileDelete(w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u
 
     try response_text.writer.print("{s} deleted", .{filename});
 
-    const json_res = ToolReturnResponse{
+    const json_res = ToolResult{
         .id = parsed_body.value.id,
         .result = .{
             .content = &[_]ContentType{
@@ -686,12 +541,12 @@ fn handleFileDelete(w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u
 }
 
 fn handleFileSize(w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u8) !void {
-    const parsed_body = try json.parseFromSlice(ToolsReqJson, alloc, body, .{
+    const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, .{
         .ignore_unknown_fields = true,
     });
     defer parsed_body.deinit();
 
-    const parsed_json: ToolsReqJson = parsed_body.value;
+    const parsed_json: ToolRequest = parsed_body.value;
 
     const filename = parsed_json.params.arguments.filename orelse return error.MissingFilename;
 
@@ -704,7 +559,7 @@ fn handleFileSize(w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u8)
 
     try response_text.writer.print("{d}", .{len});
 
-    const json_res = ToolReturnResponse{
+    const json_res = ToolResult{
         .id = parsed_body.value.id,
         .result = .{
             .content = &[_]ContentType{
@@ -720,12 +575,12 @@ fn handleFileSize(w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u8)
 }
 
 fn handleRead(w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u8) !void {
-    const parsed_body = try json.parseFromSlice(ToolsReqJson, alloc, body, .{
+    const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, .{
         .ignore_unknown_fields = true,
     });
     defer parsed_body.deinit();
 
-    const parsed_json: ToolsReqJson = parsed_body.value;
+    const parsed_json: ToolRequest = parsed_body.value;
 
     const filename = parsed_json.params.arguments.filename orelse return error.MissingFilename;
 
@@ -746,7 +601,7 @@ fn handleRead(w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u8) !vo
 
     _ = try reader.interface.stream(&response.writer, if (length) |len| .limited(len) else .unlimited);
 
-    const json_res = ToolReturnResponse{
+    const json_res = ToolResult{
         .id = parsed_body.value.id,
         .result = .{
             .content = &[_]ContentType{
@@ -762,7 +617,7 @@ fn handleRead(w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u8) !vo
 }
 
 fn handleFileSearch(w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u8) !void {
-    const parsed_body = try json.parseFromSlice(ToolsReqJson, alloc, body, .{
+    const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, .{
         .ignore_unknown_fields = true,
     });
     defer parsed_body.deinit();
@@ -770,7 +625,7 @@ fn handleFileSearch(w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u
     var response = Io.Writer.Allocating.init(alloc);
     defer response.deinit();
 
-    const parsed_json: ToolsReqJson = parsed_body.value;
+    const parsed_json: ToolRequest = parsed_body.value;
 
     const filename = parsed_json.params.arguments.filename orelse return error.MissingFilename;
     const substring = parsed_json.params.arguments.content orelse return error.MissingSubstring;
@@ -794,7 +649,7 @@ fn handleFileSearch(w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u
         try response.writer.print("Could not find \"{s}\" in \"{s}\"", .{ substring, filename });
     }
 
-    const json_res = ToolReturnResponse{
+    const json_res = ToolResult{
         .id = parsed_body.value.id,
         .result = .{
             .content = &[_]ContentType{
@@ -811,7 +666,7 @@ fn handleFileSearch(w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u
 }
 
 fn handleDateTime(w: *Writer, alloc: Allocator, io: Io, body: []u8) !void {
-    const parsed_body = try json.parseFromSlice(ToolsReqJson, alloc, body, .{
+    const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, .{
         .ignore_unknown_fields = true,
     });
     defer parsed_body.deinit();
@@ -836,7 +691,7 @@ fn handleDateTime(w: *Writer, alloc: Allocator, io: Io, body: []u8) !void {
         ds.getSecondsIntoMinute(),
     });
 
-    const json_res = ToolReturnResponse{
+    const json_res = ToolResult{
         .id = parsed_body.value.id,
         .result = .{
             .content = &[_]ContentType{
@@ -853,12 +708,12 @@ fn handleDateTime(w: *Writer, alloc: Allocator, io: Io, body: []u8) !void {
 }
 
 fn handleWebRequest(w: *Writer, alloc: Allocator, io: Io, body: []u8) !void {
-    const parsed_body = try json.parseFromSlice(ToolsReqJson, alloc, body, .{
+    const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, .{
         .ignore_unknown_fields = true,
     });
     defer parsed_body.deinit();
 
-    const parsed_json: ToolsReqJson = parsed_body.value;
+    const parsed_json: ToolRequest = parsed_body.value;
 
     const url = parsed_json.params.arguments.url orelse return error.MissingUrl;
     var client = std.http.Client{
@@ -880,7 +735,7 @@ fn handleWebRequest(w: *Writer, alloc: Allocator, io: Io, body: []u8) !void {
 
     try response.writer.print("\nSTATUS: {d} {s}", .{ @intFromEnum(res.status), @tagName(res.status) });
 
-    const json_res = ToolReturnResponse{
+    const json_res = ToolResult{
         .id = parsed_body.value.id,
         .result = .{
             .content = &[_]ContentType{
@@ -897,7 +752,7 @@ fn handleWebRequest(w: *Writer, alloc: Allocator, io: Io, body: []u8) !void {
 }
 
 fn handleListFiles(w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u8) !void {
-    const parsed_body = try json.parseFromSlice(ToolsReqJson, alloc, body, .{
+    const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, .{
         .ignore_unknown_fields = true,
     });
     defer parsed_body.deinit();
@@ -916,7 +771,7 @@ fn handleListFiles(w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u8
         try response.writer.print("{{}}", .{});
     }
 
-    const json_res = ToolReturnResponse{
+    const json_res = ToolResult{
         .id = parsed_body.value.id,
         .result = .{
             .content = &[_]ContentType{
@@ -938,7 +793,7 @@ fn handleErrorResponse(w: *Writer, e: anyerror, id: usize, alloc: Allocator) !vo
 
     try error_response.writer.print("ERROR: {s}", .{@errorName(e)});
 
-    const response_json = ToolReturnResponse{
+    const response_json = ToolResult{
         .id = id,
         .result = .{
             .content = &[_]ContentType{
@@ -956,12 +811,12 @@ fn handleErrorResponse(w: *Writer, e: anyerror, id: usize, alloc: Allocator) !vo
 
 fn handleGCC(w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u8) !void {
     _ = dir;
-    const parsed_body = try json.parseFromSlice(ToolsReqJson, alloc, body, .{
+    const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, .{
         .ignore_unknown_fields = true,
     });
     defer parsed_body.deinit();
 
-    const parsed_json: ToolsReqJson = parsed_body.value;
+    const parsed_json: ToolRequest = parsed_body.value;
 
     const arguments = parsed_json.params.arguments.arguments orelse error.NoArgumentsGiven;
 
@@ -986,7 +841,7 @@ fn handleGCC(w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u8) !voi
         try response.writer.print("Exited: {d}\n", .{result.term.exited});
     }
 
-    const json_res = ToolReturnResponse{
+    const json_res = ToolResult{
         .id = parsed_body.value.id,
         .result = .{
             .content = &[_]ContentType{

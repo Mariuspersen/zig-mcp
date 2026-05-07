@@ -3,6 +3,8 @@
     .version = "0.0.0",
     .fingerprint = 0x1c29ab0b13b08f3e,
     .minimum_zig_version = "0.16.0",
+    .PROTOCOL_VERSION = "2025-06-18",
+    .JSONRPC = "2.0",
     .dependencies = .{},
     .paths = .{
         "build.zig",
