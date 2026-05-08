@@ -299,6 +299,28 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
                         },
                     },
                 },
+                ToolEntry{
+                    .name = "man",
+                    .description = "man command for reading system reference manuals",
+                    .title = "Manual Pages",
+                    .inputSchema = .{
+                        .required = &.{"arguments"},
+                        .properties = .{
+                            .arguments = .{},
+                        },
+                    },
+                },
+                ToolEntry{
+                    .name = "valgrind",
+                    .description = "a programming tool for memory debugging, memory leak detection, and profiling.",
+                    .title = "Valgrind",
+                    .inputSchema = .{
+                        .required = &.{"arguments"},
+                        .properties = .{
+                            .arguments = .{},
+                        },
+                    },
+                },
             },
         },
     };
@@ -330,7 +352,9 @@ fn handleCallTools(w: *Writer, alloc: Allocator, io: Io, body: []u8, dir: Io.Dir
         hash("file_search") => handleFileSearch(w, alloc, io, dir, body),
         hash("date_time") => handleDateTime(w, alloc, io, body),
         hash("web_request") => handleWebRequest(w, alloc, io, body),
-        hash("gcc") => handleGCC(w, alloc, io, dir, body),
+        hash("gcc") => handleCommand("gcc",w, alloc, io, dir, body),
+        hash("man") => handleCommand("man",w, alloc, io, dir, body),
+        hash("valgrind") => handleCommand("valgrind",w, alloc, io, dir, body),
         else => handleErrorResponse(w, error.NoSuchMethod, id, alloc),
     };
     res catch |e| {
@@ -809,7 +833,7 @@ fn handleErrorResponse(w: *Writer, e: anyerror, id: usize, alloc: Allocator) !vo
     try res_json_struct_fmt.format(w);
 }
 
-fn handleGCC(w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u8) !void {
+fn handleCommand(cmd: []const u8, w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u8) !void {
     _ = dir;
     const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, .{
         .ignore_unknown_fields = true,
@@ -824,7 +848,7 @@ fn handleGCC(w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u8) !voi
     defer response.deinit();
 
     const concat_args = try std.mem.concat(alloc, []const u8, &.{
-        &.{"gcc"},
+        &.{ cmd },
         try arguments,
     });
     defer alloc.free(concat_args);
