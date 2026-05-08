@@ -577,6 +577,9 @@ fn handleFileDelete(w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u
 
     const filename = parsed_json.params.arguments.filename orelse return error.MissingFilename;
 
+    //Maybe not try to delete the .git folder you dumbass AI????
+    if (std.mem.startsWith(u8, filename, ".git")) return error.PermissionDenied;
+
     try dir.deleteFile(io, filename);
 
     var response_text = Io.Writer.Allocating.init(alloc);
@@ -812,6 +815,8 @@ fn handleListFiles(w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u8
     defer walker.deinit();
 
     while (try walker.next(io)) |entry| {
+        //Dont even give it a fucking chance
+        if (std.mem.eql(u8, entry.basename, ".git")) continue;
         try response.writer.print("{s}\n", .{entry.basename});
     }
 
