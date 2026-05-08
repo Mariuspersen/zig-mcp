@@ -21,6 +21,10 @@ inputSchema: struct {
             type: []const u8 = "number",
             description: []const u8 = "Start index from where to read the file",
         } = null,
+        end: ?struct {
+            type: []const u8 = "number",
+            description: []const u8 = "End index from where to read the file",
+        } = null,
         length: ?struct {
             type: []const u8 = "number",
             description: []const u8 = "How many characters from start to read",

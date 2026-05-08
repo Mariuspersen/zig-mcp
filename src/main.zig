@@ -37,7 +37,7 @@ const ContentType = @import("content_type.zig");
 const ToolResult = @import("tool_result.zig");
 const ProtocolError = @import("protocol_error.zig");
 
-const address = IpAddress.parse( Config.hostname, Config.port) catch |e| {
+const address = IpAddress.parse(Config.hostname, Config.port) catch |e| {
     @compileError("Unable to resolve IP Address: " ++ e);
 };
 
@@ -45,9 +45,17 @@ pub fn main(init: std.process.Init) !void {
     const alloc = init.gpa;
     const io = init.io;
 
-    const dir = Io.Dir.cwd().openDir(io, "storage", .{ .follow_symlinks = false, .iterate = true }) catch blk: {
+    const dir = Io.Dir.cwd().openDir(io, "storage", .{
+        .follow_symlinks = false,
+        .iterate = true,
+        .access_sub_paths = false,
+    }) catch blk: {
         try Io.Dir.cwd().createDir(io, "storage", .default_dir);
-        break :blk try Io.Dir.cwd().openDir(io, "storage", .{ .follow_symlinks = false, .iterate = true });
+        break :blk try Io.Dir.cwd().openDir(io, "storage", .{
+            .follow_symlinks = false,
+            .iterate = true,
+            .access_sub_paths = false,
+        });
     };
 
     defer dir.close(io);
@@ -58,17 +66,24 @@ pub fn main(init: std.process.Init) !void {
     var stdout_writer = Io.File.stdout().writer(io, stdout_buf);
     const stdout = &stdout_writer.interface;
 
-    try stdout.print("{s} version {s}\n", .{@tagName(Config.name), Config.version});
+    try stdout.print("{s} version {s}\n", .{ @tagName(Config.name), Config.version });
     try stdout.flush();
 
     var server = try address.listen(io, .{ .reuse_address = true });
 
-    try stdout.print("Listening on {s}:{d}\n", .{Config.hostname, Config.port});
+    try stdout.print("Listening on {s}:{d}\n", .{ Config.hostname, Config.port });
     try stdout.flush();
 
     defer server.deinit(io);
     while (server.accept(io)) |s| {
-        handleConnection(alloc, s, io, dir, init.environ_map, stdout,) catch |e| errorWriter(e);
+        handleConnection(
+            alloc,
+            s,
+            io,
+            dir,
+            init.environ_map,
+            stdout,
+        ) catch |e| errorWriter(e);
     } else |e| errorWriter(e);
 }
 
@@ -190,7 +205,7 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
                 },
                 ToolEntry{
                     .name = "file_write",
-                    .description = "Write text to a file",
+                    .description = "Creates a file and writes content to it",
                     .title = "File Write",
                     .inputSchema = .{
                         .type = "object",
@@ -203,7 +218,7 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
                 },
                 ToolEntry{
                     .name = "file_append",
-                    .description = "Append text to a end of a file",
+                    .description = "Opens a file and appends content to the end",
                     .title = "File Append",
                     .inputSchema = .{
                         .type = "object",
@@ -215,18 +230,34 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
                     },
                 },
                 ToolEntry{
-                    .name = "file_insert",
-                    .description = "Insert text at a index in a file",
+                    .name = "file_overwrite",
+                    .description = "Opens a file and overwrites text at start",
                     .title = "File Insert",
                     .inputSchema = .{
                         .type = "object",
-                        .required = &.{ "filename", "content" },
-                        .properties = .{ .filename = .{}, .content = .{}, .start = .{ .description = "Index of where to insert" } },
+                        .required = &.{ "filename", "content", "start" },
+                        .properties = .{
+                            .filename = .{},
+                            .content = .{},
+                            .start = .{ .description = "Index of where to insert" },
+                        },
                     },
                 },
                 ToolEntry{
                     .name = "file_read",
-                    .description = "Read from a file given a filename",
+                    .description = "Opens the file and reads all of it",
+                    .title = "File Read",
+                    .inputSchema = .{
+                        .type = "object",
+                        .required = &.{"filename"},
+                        .properties = .{
+                            .filename = .{},
+                        },
+                    },
+                },
+                ToolEntry{
+                    .name = "file_read_slice",
+                    .description = "Opens a file, returns the slice between start and end",
                     .title = "File Read",
                     .inputSchema = .{
                         .type = "object",
@@ -234,7 +265,7 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
                         .properties = .{
                             .filename = .{},
                             .start = .{},
-                            .length = .{},
+                            .end = .{},
                         },
                     },
                 },
@@ -269,22 +300,6 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
                         .required = &.{},
                         .properties = .{
                             .filename = .{},
-                        },
-                    },
-                },
-                ToolEntry{
-                    .name = "file_search",
-                    .description = "Returns a index into a file",
-                    .title = "File Search",
-                    .inputSchema = .{
-                        .type = "object",
-                        .required = &.{ "filename", "content" },
-                        .properties = .{
-                            .filename = .{},
-                            .content = .{
-                                .description = "content to search for",
-                            },
-                            .start = .{},
                         },
                     },
                 },
@@ -342,6 +357,28 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
                         },
                     },
                 },
+                ToolEntry{
+                    .name = "grep",
+                    .description = "greps the file",
+                    .title = "File Search",
+                    .inputSchema = .{
+                        .required = &.{"arguments"},
+                        .properties = .{
+                            .arguments = .{},
+                        },
+                    },
+                },
+                ToolEntry{
+                    .name = "git",
+                    .description = "version control system",
+                    .title = "Git",
+                    .inputSchema = .{
+                        .required = &.{"arguments"},
+                        .properties = .{
+                            .arguments = .{},
+                        },
+                    },
+                },
             },
         },
     };
@@ -352,7 +389,14 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
     try res_json_struct_fmt.format(w);
 }
 
-fn handleCallTools(w: *Writer, alloc: Allocator, dir: Io.Dir, io: Io, map: *const std.process.Environ.Map, body: []u8, ) !void {
+fn handleCallTools(
+    w: *Writer,
+    alloc: Allocator,
+    dir: Io.Dir,
+    io: Io,
+    map: *const std.process.Environ.Map,
+    body: []u8,
+) !void {
     _ = map;
     const methodJson = try json.parseFromSlice(ToolNameReq, alloc, body, .{
         .ignore_unknown_fields = true,
@@ -365,18 +409,20 @@ fn handleCallTools(w: *Writer, alloc: Allocator, dir: Io.Dir, io: Io, map: *cons
     const res = switch (hash_method) {
         hash("arithmetic") => handleArithmetic(w, body, alloc),
         hash("file_write") => handleWrite(w, alloc, io, dir, body),
-        hash("file_append") => handleAppend(w, alloc, io, dir, body),
-        hash("file_insert") => handleInsert(w, alloc, io, dir, body),
+        hash("file_append") => handleInsert(w, alloc, io, true, dir, body),
+        hash("file_overwrite") => handleInsert(w, alloc, io, false, dir, body),
         hash("file_read") => handleRead(w, alloc, io, dir, body),
+        hash("file_read_slice") => handleReadSlice(w, alloc, io, dir, body),
         hash("file_list") => handleListFiles(w, alloc, io, dir, body),
         hash("file_size") => handleFileSize(w, alloc, io, dir, body),
         hash("file_delete") => handleFileDelete(w, alloc, io, dir, body),
-        hash("file_search") => handleFileSearch(w, alloc, io, dir, body),
         hash("date_time") => handleDateTime(w, alloc, io, body),
         hash("web_request") => handleWebRequest(w, alloc, io, body),
-        hash("gcc") => handleCommand("gcc",w, alloc, io, dir, body),
-        hash("man") => handleCommand("man",w, alloc, io, dir, body),
-        hash("valgrind") => handleCommand("valgrind",w, alloc, io, dir, body),
+        hash("gcc") => handleCommand(&.{"gcc"}, w, alloc, io, dir, body),
+        hash("man") => handleCommand(&.{"man"}, w, alloc, io, dir, body),
+        hash("valgrind") => handleCommand(&.{"valgrind"}, w, alloc, io, dir, body),
+        hash("grep") => handleCommand(&.{"grep"}, w, alloc, io, dir, body),
+        hash("git") => handleCommand(&.{"git"}, w, alloc, io, dir, body),
         else => handleErrorResponse(w, error.NoSuchMethod, id, alloc),
     };
     res catch |e| {
@@ -479,7 +525,7 @@ fn handleWrite(w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u8) !v
     try res_json_struct_fmt.format(w);
 }
 
-fn handleAppend(w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u8) !void {
+fn handleInsert(w: *Writer, alloc: Allocator, io: Io, append: bool, dir: Io.Dir, body: []u8) !void {
     const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, .{
         .ignore_unknown_fields = true,
     });
@@ -490,48 +536,15 @@ fn handleAppend(w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u8) !
     const filename = parsed_json.params.arguments.filename orelse return error.MissingFilename;
     const content = parsed_json.params.arguments.content orelse return error.MissingContent;
 
-    const f = try dir.openFile(io, filename, .{});
+    const f = try dir.openFile(io, filename, .{
+        .mode = .write_only,
+    });
     defer f.close(io);
 
-    try f.writeStreamingAll(io, content);
-
-    var response_text = Io.Writer.Allocating.init(alloc);
-    defer response_text.deinit();
-
-    try response_text.writer.print("{d} characters appended to {s}", .{ content.len, filename });
-
-    const json_res = ToolResult{
-        .id = parsed_body.value.id,
-        .result = .{
-            .content = &[_]ContentType{
-                .{
-                    .type = "text",
-                    .text = response_text.written(),
-                },
-            },
-        },
+    const start = try blk: {
+        if (append) break :blk f.length(io);
+        break :blk parsed_json.params.arguments.start orelse error.MissingStart;
     };
-    var res_json_struct_fmt = json.fmt(json_res, .{
-        .emit_null_optional_fields = false,
-    });
-    try res_json_struct_fmt.format(w);
-}
-
-fn handleInsert(w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u8) !void {
-    const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, .{
-        .ignore_unknown_fields = true,
-    });
-    defer parsed_body.deinit();
-
-    const parsed_json: ToolRequest = parsed_body.value;
-
-    const filename = parsed_json.params.arguments.filename orelse return error.MissingFilename;
-    const content = parsed_json.params.arguments.content orelse return error.MissingContent;
-    const start = parsed_json.params.arguments.start orelse return error.MissingStart;
-
-    const f = try dir.openFile(io, filename, .{});
-    defer f.close(io);
-
     try f.writePositionalAll(io, content, start);
 
     var response_text = Io.Writer.Allocating.init(alloc);
@@ -630,6 +643,44 @@ fn handleRead(w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u8) !vo
 
     const filename = parsed_json.params.arguments.filename orelse return error.MissingFilename;
 
+    const f = try dir.openFile(io, filename, .{});
+    defer f.close(io);
+
+    const buf = try alloc.alloc(u8, 1024);
+    defer alloc.free(buf);
+
+    var reader = f.reader(io, buf);
+
+    var response = Io.Writer.Allocating.init(alloc);
+    defer response.deinit();
+
+    _ = try reader.interface.stream(&response.writer, .unlimited);
+
+    const json_res = ToolResult{
+        .id = parsed_body.value.id,
+        .result = .{
+            .content = &[_]ContentType{
+                .{
+                    .type = "text",
+                    .text = response.written(),
+                },
+            },
+        },
+    };
+    var res_json_struct_fmt = json.fmt(json_res, OPTIONS);
+    try res_json_struct_fmt.format(w);
+}
+
+fn handleReadSlice(w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u8) !void {
+    const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, .{
+        .ignore_unknown_fields = true,
+    });
+    defer parsed_body.deinit();
+
+    const parsed_json: ToolRequest = parsed_body.value;
+
+    const filename = parsed_json.params.arguments.filename orelse return error.MissingFilename;
+
     const start = parsed_json.params.arguments.start;
     const length = parsed_json.params.arguments.length;
 
@@ -658,55 +709,6 @@ fn handleRead(w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u8) !vo
             },
         },
     };
-    var res_json_struct_fmt = json.fmt(json_res, OPTIONS);
-    try res_json_struct_fmt.format(w);
-}
-
-fn handleFileSearch(w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u8) !void {
-    const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, .{
-        .ignore_unknown_fields = true,
-    });
-    defer parsed_body.deinit();
-
-    var response = Io.Writer.Allocating.init(alloc);
-    defer response.deinit();
-
-    const parsed_json: ToolRequest = parsed_body.value;
-
-    const filename = parsed_json.params.arguments.filename orelse return error.MissingFilename;
-    const substring = parsed_json.params.arguments.content orelse return error.MissingSubstring;
-    const start = parsed_json.params.arguments.start orelse 0;
-
-    const f = try dir.openFile(io, filename, .{});
-    defer f.close(io);
-
-    const size = try f.length(io);
-
-    const buf = try alloc.alloc(u8, size);
-    defer alloc.free(buf);
-
-    var reader = f.reader(io, buf);
-    const content = try reader.interface.readAlloc(alloc, size);
-    defer alloc.free(content);
-
-    if (std.mem.findPos(u8, content, start, substring)) |idx| {
-        try response.writer.print("{d}", .{idx});
-    } else {
-        try response.writer.print("Could not find \"{s}\" in \"{s}\"", .{ substring, filename });
-    }
-
-    const json_res = ToolResult{
-        .id = parsed_body.value.id,
-        .result = .{
-            .content = &[_]ContentType{
-                .{
-                    .type = "text",
-                    .text = response.written(),
-                },
-            },
-        },
-    };
-
     var res_json_struct_fmt = json.fmt(json_res, OPTIONS);
     try res_json_struct_fmt.format(w);
 }
@@ -806,7 +808,7 @@ fn handleListFiles(w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u8
     var response = Io.Writer.Allocating.init(alloc);
     defer response.deinit();
 
-    var walker = try dir.walk(alloc);
+    var walker = try dir.walkSelectively(alloc);
     defer walker.deinit();
 
     while (try walker.next(io)) |entry| {
@@ -855,7 +857,7 @@ fn handleErrorResponse(w: *Writer, e: anyerror, id: usize, alloc: Allocator) !vo
     try res_json_struct_fmt.format(w);
 }
 
-fn handleCommand(cmd: []const u8, w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u8) !void {
+fn handleCommand(cmd: []const []const u8, w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u8) !void {
     _ = dir;
     const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, .{
         .ignore_unknown_fields = true,
@@ -870,22 +872,12 @@ fn handleCommand(cmd: []const u8, w: *Writer, alloc: Allocator, io: Io, dir: Io.
     defer response.deinit();
 
     const concat_args = try std.mem.concat(alloc, []const u8, &.{
-        &.{ cmd },
+        cmd,
         try arguments,
     });
     defer alloc.free(concat_args);
 
-    const result = try std.process.run(alloc, io, .{
-        .argv = concat_args,
-        .cwd = .{ .path = "storage" },
-    });
-
-    try response.writer.writeAll(result.stderr);
-    try response.writer.writeAll(result.stdout);
-
-    if (response.written().len == 0) {
-        try response.writer.print("Exited: {d}\n", .{result.term.exited});
-    }
+    try runCommand(alloc, io, &response.writer, concat_args);
 
     const json_res = ToolResult{
         .id = parsed_body.value.id,
@@ -903,55 +895,18 @@ fn handleCommand(cmd: []const u8, w: *Writer, alloc: Allocator, io: Io, dir: Io.
     try res_json_struct_fmt.format(w);
 }
 
-//fn handleValgrind(w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, map: *const std.process.Environ.Map, body: []u8) !void {
-//    _ = dir;
-//    const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, .{
-//        .ignore_unknown_fields = true,
-//    });
-//    defer parsed_body.deinit();
-//
-//    const parsed_json: ToolRequest = parsed_body.value;
-//
-//    const arguments = parsed_json.params.arguments.arguments orelse error.NoArgumentsGiven;
-//
-//    var response = Io.Writer.Allocating.init(alloc);
-//    defer response.deinit();
-//
-//    const concat_args = try std.mem.concat(alloc, []const u8, &.{
-//        &.{"valgrind"},
-//        try arguments,
-//    });
-//    defer alloc.free(concat_args);
-//
-//    if (map.get("DEBUGINFOD_URLS")) |url| {
-//        try response.writer.writeAll(url);
-//    }
-//
-//    const result = try std.process.run(alloc, io, .{
-//        .argv = concat_args,
-//        .cwd = .{ .path = "storage" },
-//        .environ_map = map,
-//    });
-//
-//    try response.writer.writeAll(result.stderr);
-//    try response.writer.writeAll(result.stdout);
-//
-//    if (response.written().len == 0) {
-//        try response.writer.print("Exited: {d}\n", .{result.term.exited});
-//    }
-//
-//    const json_res = ToolResult{
-//        .id = parsed_body.value.id,
-//        .result = .{
-//            .content = &[_]ContentType{
-//                .{
-//                    .type = "text",
-//                    .text = response.written(),
-//                },
-//            },
-//        },
-//    };
-//
-//    var res_json_struct_fmt = json.fmt(json_res, OPTIONS);
-//    try res_json_struct_fmt.format(w);
-//}
+fn runCommand(alloc: Allocator, io: Io, w: *Io.Writer, argv: []const []const u8) !void {
+    const result = try std.process.run(alloc, io, .{
+        .argv = argv,
+        .cwd = .{ .path = "storage" },
+    });
+    defer alloc.free(result.stderr);
+    defer alloc.free(result.stdout);
+
+    try w.writeAll(result.stderr);
+    try w.writeAll(result.stdout);
+
+    if (result.stderr.len == 0 and result.stdout.len == 0) {
+        try w.print("Exited: {d}\n", .{result.term.exited});
+    }
+}
