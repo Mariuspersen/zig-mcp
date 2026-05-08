@@ -37,6 +37,10 @@ const ContentType = @import("content_type.zig");
 const ToolResult = @import("tool_result.zig");
 const ProtocolError = @import("protocol_error.zig");
 
+const address = IpAddress.parse( Config.hostname, Config.port) catch |e| {
+    @compileError("Unable to resolve IP Address: " ++ e);
+};
+
 pub fn main(init: std.process.Init) !void {
     const alloc = init.gpa;
     const io = init.io;
@@ -48,19 +52,34 @@ pub fn main(init: std.process.Init) !void {
 
     defer dir.close(io);
 
-    const address = try IpAddress.resolve(io, "0.0.0.0", 8000);
+    const stdout_buf = try alloc.alloc(u8, 1024);
+    defer alloc.free(stdout_buf);
+
+    var stdout_writer = Io.File.stdout().writer(io, stdout_buf);
+    const stdout = &stdout_writer.interface;
+
+    try stdout.print("{s} version {s}\n", .{@tagName(Config.name), Config.version});
+    try stdout.flush();
+
     var server = try address.listen(io, .{ .reuse_address = true });
+
+    try stdout.print("Listening on {s}:{d}\n", .{Config.hostname, Config.port});
+    try stdout.flush();
+
     defer server.deinit(io);
     while (server.accept(io)) |s| {
-        handleConnection(alloc, s, io, dir) catch |e| {
-            std.debug.print("ERROR: {s}\n", .{@errorName(e)});
-        };
-    } else |e| {
-        std.debug.print("ERROR: {s}", .{@errorName(e)});
-    }
+        handleConnection(alloc, s, io, dir, init.environ_map, stdout,) catch |e| errorWriter(e);
+    } else |e| errorWriter(e);
 }
 
-fn handleConnection(alloc: Allocator, s: net.Stream, io: Io, dir: Io.Dir) !void {
+fn errorWriter(e: anyerror) void {
+    const io = std.Options.debug_io;
+    var buf: [64]u8 = undefined;
+    var locked_stderr = io.lockStderr(&buf, null) catch return;
+    locked_stderr.file_writer.interface.print("ERROR: {s}", .{@errorName(e)}) catch return;
+}
+
+fn handleConnection(alloc: Allocator, s: net.Stream, io: Io, dir: Io.Dir, map: *const std.process.Environ.Map, stdout: *Io.Writer) !void {
     defer s.close(io);
     const read_buf = try alloc.alloc(u8, 1024);
     defer alloc.free(read_buf);
@@ -97,7 +116,7 @@ fn handleConnection(alloc: Allocator, s: net.Stream, io: Io, dir: Io.Dir) !void 
     const hash_method = hash(methodJson.value.method);
     methodJson.deinit();
 
-    std.debug.print("REQUEST: {s}\n", .{body});
+    try stdout.print("REQUEST: {s}\n", .{body});
     switch (hash_method) {
         hash("initialize") => try handleInitialize(
             &res_writer.writer,
@@ -115,16 +134,18 @@ fn handleConnection(alloc: Allocator, s: net.Stream, io: Io, dir: Io.Dir) !void 
         hash("tools/call") => try handleCallTools(
             &res_writer.writer,
             alloc,
-            io,
-            body,
             dir,
+            io,
+            map,
+            body,
         ),
         else => {
             try req.respond("{}", .{ .status = .not_found });
             return;
         },
     }
-    std.debug.print("RESPONSE: {s}\n", .{res_writer.written()});
+    try stdout.print("RESPONSE: {s}\n", .{res_writer.written()});
+    try stdout.flush();
     try req.respond(res_writer.written(), .{ .status = .ok });
 }
 
@@ -299,6 +320,17 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
                         },
                     },
                 },
+                ToolEntry{
+                    .name = "valgrind",
+                    .description = "Programming tool for memory debugging, memory leak detection, and profiling.",
+                    .title = "Valgrind",
+                    .inputSchema = .{
+                        .required = &.{"arguments"},
+                        .properties = .{
+                            .arguments = .{},
+                        },
+                    },
+                },
             },
         },
     };
@@ -309,7 +341,8 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
     try res_json_struct_fmt.format(w);
 }
 
-fn handleCallTools(w: *Writer, alloc: Allocator, io: Io, body: []u8, dir: Io.Dir) !void {
+fn handleCallTools(w: *Writer, alloc: Allocator, dir: Io.Dir, io: Io, map: *const std.process.Environ.Map, body: []u8, ) !void {
+    _ = map;
     const methodJson = try json.parseFromSlice(ToolNameReq, alloc, body, .{
         .ignore_unknown_fields = true,
     });
@@ -331,6 +364,7 @@ fn handleCallTools(w: *Writer, alloc: Allocator, io: Io, body: []u8, dir: Io.Dir
         hash("date_time") => handleDateTime(w, alloc, io, body),
         hash("web_request") => handleWebRequest(w, alloc, io, body),
         hash("gcc") => handleGCC(w, alloc, io, dir, body),
+        //hash("valgrind") => handleValgrind(w, alloc, io, dir, map,body),
         else => handleErrorResponse(w, error.NoSuchMethod, id, alloc),
     };
     res catch |e| {
@@ -856,3 +890,56 @@ fn handleGCC(w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u8) !voi
     var res_json_struct_fmt = json.fmt(json_res, OPTIONS);
     try res_json_struct_fmt.format(w);
 }
+
+//fn handleValgrind(w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, map: *const std.process.Environ.Map, body: []u8) !void {
+//    _ = dir;
+//    const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, .{
+//        .ignore_unknown_fields = true,
+//    });
+//    defer parsed_body.deinit();
+//
+//    const parsed_json: ToolRequest = parsed_body.value;
+//
+//    const arguments = parsed_json.params.arguments.arguments orelse error.NoArgumentsGiven;
+//
+//    var response = Io.Writer.Allocating.init(alloc);
+//    defer response.deinit();
+//
+//    const concat_args = try std.mem.concat(alloc, []const u8, &.{
+//        &.{"valgrind"},
+//        try arguments,
+//    });
+//    defer alloc.free(concat_args);
+//
+//    if (map.get("DEBUGINFOD_URLS")) |url| {
+//        try response.writer.writeAll(url);
+//    }
+//
+//    const result = try std.process.run(alloc, io, .{
+//        .argv = concat_args,
+//        .cwd = .{ .path = "storage" },
+//        .environ_map = map,
+//    });
+//
+//    try response.writer.writeAll(result.stderr);
+//    try response.writer.writeAll(result.stdout);
+//
+//    if (response.written().len == 0) {
+//        try response.writer.print("Exited: {d}\n", .{result.term.exited});
+//    }
+//
+//    const json_res = ToolResult{
+//        .id = parsed_body.value.id,
+//        .result = .{
+//            .content = &[_]ContentType{
+//                .{
+//                    .type = "text",
+//                    .text = response.written(),
+//                },
+//            },
+//        },
+//    };
+//
+//    var res_json_struct_fmt = json.fmt(json_res, OPTIONS);
+//    try res_json_struct_fmt.format(w);
+//}
