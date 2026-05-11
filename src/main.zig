@@ -491,7 +491,9 @@ fn handleDirectory(op: dir_op, w: *Writer, alloc: Allocator, io: Io, dir: *Io.Di
     switch (op) {
         .CHANGE => {
             const filename = parsed_json.params.arguments.filename orelse return error.MissingFilename;
-            if (std.mem.eql(u8, filename, "..")) return error.UseRootDirectoryCommand;
+            if (std.mem.find(u8, filename, "..")) |_| {
+                return error.UseRootDirectoryCommand;
+            }
             dir.* = try changeDir(dir, io, filename);
             try response_text.writer.print("Changed directory to: {s}", .{filename});
         },
