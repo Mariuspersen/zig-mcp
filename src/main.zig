@@ -25,6 +25,12 @@ const OPTIONS = json.Stringify.Options{
     .emit_strings_as_arrays = false,
 };
 
+const DIR_OPTIONS = Io.Dir.OpenOptions{
+    .follow_symlinks = false,
+    .iterate = true,
+    .access_sub_paths = false,
+};
+
 const MethodJson = @import("method_only.zig");
 const ToolNameReq = @import("tool_name_req.zig");
 const InitResponse = @import("init_response.zig");
@@ -45,18 +51,7 @@ pub fn main(init: std.process.Init) !void {
     const alloc = init.gpa;
     const io = init.io;
 
-    const dir = Io.Dir.cwd().openDir(io, "storage", .{
-        .follow_symlinks = false,
-        .iterate = true,
-        .access_sub_paths = false,
-    }) catch blk: {
-        try Io.Dir.cwd().createDir(io, "storage", .default_dir);
-        break :blk try Io.Dir.cwd().openDir(io, "storage", .{
-            .follow_symlinks = false,
-            .iterate = true,
-            .access_sub_paths = false,
-        });
-    };
+    var dir = try rootDir(io);
 
     defer dir.close(io);
 
@@ -80,11 +75,25 @@ pub fn main(init: std.process.Init) !void {
             alloc,
             s,
             io,
-            dir,
+            &dir,
             init.environ_map,
             stdout,
         ) catch |e| errorWriter(e);
     } else |e| errorWriter(e);
+}
+
+fn rootDir(io: Io) !Io.Dir {
+    return Io.Dir.cwd().openDir(io, "storage", DIR_OPTIONS) catch blk: {
+        try Io.Dir.cwd().createDir(io, "storage", .default_dir);
+        break :blk try Io.Dir.cwd().openDir(io, "storage", DIR_OPTIONS);
+    };
+}
+
+fn changeDir(dir: *Io.Dir, io: Io, new_dir: []const u8) !Io.Dir {
+    return dir.openDir(io, new_dir, DIR_OPTIONS) catch blk: {
+        try dir.createDir(io, new_dir, .default_dir);
+        break :blk try dir.openDir(io, new_dir, DIR_OPTIONS);
+    };
 }
 
 fn errorWriter(e: anyerror) void {
@@ -94,7 +103,7 @@ fn errorWriter(e: anyerror) void {
     locked_stderr.file_writer.interface.print("ERROR: {s}", .{@errorName(e)}) catch return;
 }
 
-fn handleConnection(alloc: Allocator, s: net.Stream, io: Io, dir: Io.Dir, map: *const std.process.Environ.Map, stdout: *Io.Writer) !void {
+fn handleConnection(alloc: Allocator, s: net.Stream, io: Io, dir: *Io.Dir, map: *const std.process.Environ.Map, stdout: *Io.Writer) !void {
     defer s.close(io);
     const read_buf = try alloc.alloc(u8, 1024);
     defer alloc.free(read_buf);
@@ -304,6 +313,42 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
                     },
                 },
                 ToolEntry{
+                    .name = "change_directory",
+                    .description = "Change current directory",
+                    .title = "Change Directory",
+                    .inputSchema = .{
+                        .type = "object",
+                        .required = &.{},
+                        .properties = .{
+                            .filename = .{},
+                        },
+                    },
+                },
+                ToolEntry{
+                    .name = "current_directory",
+                    .description = "See current directory",
+                    .title = "Current Directory",
+                    .inputSchema = .{
+                        .type = "object",
+                        .required = &.{},
+                        .properties = .{
+                            .filename = .{},
+                        },
+                    },
+                },
+                ToolEntry{
+                    .name = "root_directory",
+                    .description = "Return to the root directory",
+                    .title = "Root Directory",
+                    .inputSchema = .{
+                        .type = "object",
+                        .required = &.{},
+                        .properties = .{
+                            .filename = .{},
+                        },
+                    },
+                },
+                ToolEntry{
                     .name = "date_time",
                     .description = "Returns the date and time",
                     .title = "Date and Time",
@@ -389,14 +434,7 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
     try res_json_struct_fmt.format(w);
 }
 
-fn handleCallTools(
-    w: *Writer,
-    alloc: Allocator,
-    dir: Io.Dir,
-    io: Io,
-    map: *const std.process.Environ.Map,
-    body: []u8,
-) !void {
+fn handleCallTools(w: *Writer, alloc: Allocator, dir: *Io.Dir, io: Io, map: *const std.process.Environ.Map, body: []u8) !void {
     _ = map;
     const methodJson = try json.parseFromSlice(ToolNameReq, alloc, body, .{
         .ignore_unknown_fields = true,
@@ -423,11 +461,99 @@ fn handleCallTools(
         hash("valgrind") => handleCommand(&.{"valgrind"}, w, alloc, io, dir, body),
         hash("grep") => handleCommand(&.{"grep"}, w, alloc, io, dir, body),
         hash("git") => handleCommand(&.{"git"}, w, alloc, io, dir, body),
+        hash("change_directory") => handleDirectory(.CHANGE, w, alloc, io, dir, body),
+        hash("current_directory") => handleDirectory(.CURRENT, w, alloc, io, dir, body),
+        hash("root_directory") => handleDirectory(.ROOT, w, alloc, io, dir, body),
         else => handleErrorResponse(w, error.NoSuchMethod, id, alloc),
     };
     res catch |e| {
         try handleErrorResponse(w, e, id, alloc);
     };
+}
+
+const dir_op = enum {
+    CHANGE,
+    ROOT,
+    CURRENT,
+};
+
+fn handleDirectory(op: dir_op, w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []u8) !void {
+    const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, .{
+        .ignore_unknown_fields = true,
+    });
+    defer parsed_body.deinit();
+
+    const parsed_json: ToolRequest = parsed_body.value;
+
+    var response_text = Io.Writer.Allocating.init(alloc);
+    defer response_text.deinit();
+
+    switch (op) {
+        .CHANGE => {
+            const filename = parsed_json.params.arguments.filename orelse return error.MissingFilename;
+            if (std.mem.eql(u8, filename, "..")) return error.UseRootDirectoryCommand;
+            dir.* = try changeDir(dir, io, filename);
+            try response_text.writer.print("Changed directory to: {s}", .{filename});
+        },
+        .CURRENT => {
+            const current = try dir.realPathFileAlloc(io, ".", alloc);
+            defer alloc.free(current);
+
+            try response_text.writer.writeAll(current);
+        },
+        .ROOT => {
+            dir.* = try rootDir(io);
+            try response_text.writer.print("Changed directory to root", .{});
+        },
+    }
+
+    const json_res = ToolResult{
+        .id = parsed_body.value.id,
+        .result = .{
+            .content = &[_]ContentType{
+                .{
+                    .type = "text",
+                    .text = response_text.written(),
+                },
+            },
+        },
+    };
+    var res_json_struct_fmt = json.fmt(json_res, OPTIONS);
+    try res_json_struct_fmt.format(w);
+}
+
+test "Make sure it can't escape it's confines" {
+    const gba = std.testing.allocator;
+    const io = std.testing.io;
+    var tmp_dir = std.testing.tmpDir(DIR_OPTIONS);
+    var w = Io.Writer.Allocating.init(gba);
+    defer w.deinit();
+
+    var body = Io.Writer.Allocating.init(gba);
+    defer body.deinit();
+
+    const body_json = ToolRequest{
+        .id = 0,
+        .method = "change_directory",
+        .params = .{
+            .name = "",
+            .arguments = .{ .filename = ".." },
+        },
+    };
+    var body_formatter = json.fmt(body_json, OPTIONS);
+    try body_formatter.format(&body.writer);
+
+    try std.testing.expectError(
+        error.UseRootDirectoryCommand,
+        handleDirectory(
+            .CHANGE,
+            &w.writer,
+            gba,
+            io,
+            &tmp_dir.dir,
+            body.written(),
+        ),
+    );
 }
 
 fn handleArithmetic(w: *Writer, body: []u8, alloc: Allocator) !void {
@@ -488,7 +614,7 @@ fn handleArithmetic(w: *Writer, body: []u8, alloc: Allocator) !void {
     try res_json_struct_fmt.format(w);
 }
 
-fn handleWrite(w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u8) !void {
+fn handleWrite(w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []u8) !void {
     const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, .{
         .ignore_unknown_fields = true,
     });
@@ -525,7 +651,7 @@ fn handleWrite(w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u8) !v
     try res_json_struct_fmt.format(w);
 }
 
-fn handleInsert(w: *Writer, alloc: Allocator, io: Io, append: bool, dir: Io.Dir, body: []u8) !void {
+fn handleInsert(w: *Writer, alloc: Allocator, io: Io, append: bool, dir: *Io.Dir, body: []u8) !void {
     const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, .{
         .ignore_unknown_fields = true,
     });
@@ -567,7 +693,7 @@ fn handleInsert(w: *Writer, alloc: Allocator, io: Io, append: bool, dir: Io.Dir,
     try res_json_struct_fmt.format(w);
 }
 
-fn handleFileDelete(w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u8) !void {
+fn handleFileDelete(w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []u8) !void {
     const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, .{
         .ignore_unknown_fields = true,
     });
@@ -602,7 +728,7 @@ fn handleFileDelete(w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u
     try res_json_struct_fmt.format(w);
 }
 
-fn handleFileSize(w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u8) !void {
+fn handleFileSize(w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []u8) !void {
     const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, .{
         .ignore_unknown_fields = true,
     });
@@ -636,7 +762,7 @@ fn handleFileSize(w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u8)
     try res_json_struct_fmt.format(w);
 }
 
-fn handleRead(w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u8) !void {
+fn handleRead(w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []u8) !void {
     const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, .{
         .ignore_unknown_fields = true,
     });
@@ -674,7 +800,7 @@ fn handleRead(w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u8) !vo
     try res_json_struct_fmt.format(w);
 }
 
-fn handleReadSlice(w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u8) !void {
+fn handleReadSlice(w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []u8) !void {
     const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, .{
         .ignore_unknown_fields = true,
     });
@@ -802,7 +928,7 @@ fn handleWebRequest(w: *Writer, alloc: Allocator, io: Io, body: []u8) !void {
     try res_json_struct_fmt.format(w);
 }
 
-fn handleListFiles(w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u8) !void {
+fn handleListFiles(w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []u8) !void {
     const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, .{
         .ignore_unknown_fields = true,
     });
@@ -862,7 +988,7 @@ fn handleErrorResponse(w: *Writer, e: anyerror, id: usize, alloc: Allocator) !vo
     try res_json_struct_fmt.format(w);
 }
 
-fn handleCommand(cmd: []const []const u8, w: *Writer, alloc: Allocator, io: Io, dir: Io.Dir, body: []u8) !void {
+fn handleCommand(cmd: []const []const u8, w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []u8) !void {
     _ = dir;
     const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, .{
         .ignore_unknown_fields = true,
