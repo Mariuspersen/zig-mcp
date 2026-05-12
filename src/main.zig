@@ -10,6 +10,8 @@ const epoch = time.epoch;
 const Writer = Io.Writer;
 const Allocator = std.mem.Allocator;
 
+const Table = std.StringHashMap(std.ArrayList(u8));
+
 const IpAddress = net.IpAddress;
 
 const hash = std.hash.Crc32.hash;
@@ -23,6 +25,12 @@ pub const OPTIONS = json.Stringify.Options{
     .escape_unicode = true,
     .whitespace = .minified,
     .emit_strings_as_arrays = false,
+};
+
+pub const JSON_PARSE_OPTS = json.ParseOptions{
+    .ignore_unknown_fields = true,
+    .duplicate_field_behavior = .use_last,
+    .parse_numbers = true,
 };
 
 pub const DIR_OPTIONS = Io.Dir.OpenOptions{
@@ -52,8 +60,17 @@ pub fn main(init: std.process.Init) !void {
     const io = init.io;
 
     var dir = try rootDir(io);
-
     defer dir.close(io);
+
+    var table = Table.init(alloc);
+    defer {
+        var it = table.iterator();
+        while (it.next()) |entry| {
+            alloc.free(entry.key_ptr.*);
+            entry.value_ptr.deinit(alloc);
+        }
+        table.deinit();
+    }
 
     const stdout_buf = try alloc.alloc(u8, 1024);
     defer alloc.free(stdout_buf);
@@ -78,21 +95,17 @@ pub fn main(init: std.process.Init) !void {
             &dir,
             init.environ_map,
             stdout,
+            &table,
         ) catch |e| errorWriter(e);
     } else |e| errorWriter(e);
 }
 
 fn rootDir(io: Io) !Io.Dir {
-    const root_name = "storage";
-    return try Io.Dir.cwd().createDirPathOpen(io, root_name, .{
-        .open_options = DIR_OPTIONS
-    });
+    return try Io.Dir.cwd().createDirPathOpen(io, Config.storage_directory, .{ .open_options = DIR_OPTIONS });
 }
 
 fn changeDir(dir: *Io.Dir, io: Io, new_dir: []const u8) !Io.Dir {
-    return try dir.createDirPathOpen(io, new_dir, .{
-        .open_options = DIR_OPTIONS
-    });
+    return try dir.createDirPathOpen(io, new_dir, .{ .open_options = DIR_OPTIONS });
 }
 
 fn errorWriter(e: anyerror) void {
@@ -102,7 +115,7 @@ fn errorWriter(e: anyerror) void {
     locked_stderr.file_writer.interface.print("ERROR: {s}", .{@errorName(e)}) catch return;
 }
 
-fn handleConnection(alloc: Allocator, s: net.Stream, io: Io, dir: *Io.Dir, map: *const std.process.Environ.Map, stdout: *Io.Writer) !void {
+fn handleConnection(alloc: Allocator, s: net.Stream, io: Io, dir: *Io.Dir, map: *const std.process.Environ.Map, stdout: *Io.Writer, table: *Table) !void {
     defer s.close(io);
     const read_buf = try alloc.alloc(u8, 1024);
     defer alloc.free(read_buf);
@@ -133,9 +146,7 @@ fn handleConnection(alloc: Allocator, s: net.Stream, io: Io, dir: *Io.Dir, map: 
     var res_writer = Io.Writer.Allocating.init(alloc);
     defer res_writer.deinit();
 
-    const methodJson = try json.parseFromSlice(MethodJson, alloc, body, .{
-        .ignore_unknown_fields = true,
-    });
+    const methodJson = try json.parseFromSlice(MethodJson, alloc, body, JSON_PARSE_OPTS);
     const hash_method = hash(methodJson.value.method);
     methodJson.deinit();
 
@@ -161,6 +172,7 @@ fn handleConnection(alloc: Allocator, s: net.Stream, io: Io, dir: *Io.Dir, map: 
             io,
             map,
             body,
+            table,
         ),
         else => {
             try req.respond("{}", .{ .status = .not_found });
@@ -330,8 +342,7 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
                     .inputSchema = .{
                         .type = "object",
                         .required = &.{},
-                        .properties = .{
-                        },
+                        .properties = .{},
                     },
                 },
                 ToolEntry{
@@ -341,7 +352,35 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
                     .inputSchema = .{
                         .type = "object",
                         .required = &.{},
+                        .properties = .{},
+                    },
+                },
+                ToolEntry{
+                    .name = "remember",
+                    .description = "Put something into memory, using a keyword and content",
+                    .title = "Remember",
+                    .inputSchema = .{
+                        .type = "object",
+                        .required = &.{},
                         .properties = .{
+                            .keyword = .{
+                                .description = "Keyword to remember by",
+                            },
+                            .content = .{
+                                .description = "Content to be put into memory",
+                            },
+                        },
+                    },
+                },
+                ToolEntry{
+                    .name = "recall",
+                    .description = "recall something from memory, using a keyword",
+                    .title = "Recall",
+                    .inputSchema = .{
+                        .type = "object",
+                        .required = &.{},
+                        .properties = .{
+                            .keyword = .{ .description = "Keyword to find in memory" },
                         },
                     },
                 },
@@ -431,11 +470,9 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
     try res_json_struct_fmt.format(w);
 }
 
-fn handleCallTools(w: *Writer, alloc: Allocator, dir: *Io.Dir, io: Io, map: *const std.process.Environ.Map, body: []u8) !void {
+fn handleCallTools(w: *Writer, alloc: Allocator, dir: *Io.Dir, io: Io, map: *const std.process.Environ.Map, body: []u8, table: *Table) !void {
     _ = map;
-    const methodJson = try json.parseFromSlice(ToolNameReq, alloc, body, .{
-        .ignore_unknown_fields = true,
-    });
+    const methodJson = try json.parseFromSlice(ToolNameReq, alloc, body, JSON_PARSE_OPTS);
     const hash_method = hash(methodJson.value.params.name);
     methodJson.deinit();
 
@@ -461,6 +498,8 @@ fn handleCallTools(w: *Writer, alloc: Allocator, dir: *Io.Dir, io: Io, map: *con
         hash("change_directory") => handleDirectory(.CHANGE, w, alloc, io, dir, body),
         hash("current_directory") => handleDirectory(.CURRENT, w, alloc, io, dir, body),
         hash("root_directory") => handleDirectory(.ROOT, w, alloc, io, dir, body),
+        hash("remember") => handleMemory(.REMEMBER, w, alloc, body, table),
+        hash("recall") => handleMemory(.RECALL, w, alloc, body, table),
         else => handleErrorResponse(w, error.NoSuchMethod, id, alloc),
     };
     res catch |e| {
@@ -468,22 +507,62 @@ fn handleCallTools(w: *Writer, alloc: Allocator, dir: *Io.Dir, io: Io, map: *con
     };
 }
 
-const dir_op = enum {
+const MEM_OP = enum {
+    RECALL,
+    REMEMBER,
+};
+
+pub fn handleMemory(op: MEM_OP, w: *Writer, alloc: Allocator, body: []u8, table: *Table) !void {
+    const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, JSON_PARSE_OPTS);
+    defer parsed_body.deinit();
+
+    const parsed_json: ToolRequest = parsed_body.value;
+    const keyword = parsed_json.params.arguments.keyword orelse return error.NoKeywordProvided;
+
+    var response = Io.Writer.Allocating.init(alloc);
+    defer response.deinit();
+
+    switch (op) {
+        .REMEMBER => {
+            const content = parsed_json.params.arguments.content orelse return error.NoKeywordProvided;
+            const entry = table.getPtr(keyword);
+            if (entry) |array| {
+                try array.appendSlice(alloc, "- ");
+                try array.appendSlice(alloc, content);
+                try array.append(alloc, '\n');
+            } else {
+                try table.put(
+                    try alloc.dupe(u8, keyword),
+                    try .initCapacity(alloc, content.len),
+                );
+                const new_entry = table.getPtr(keyword) orelse unreachable;
+                try new_entry.appendSlice(alloc, "- ");
+                try new_entry.appendSlice(alloc, content);
+                try new_entry.append(alloc, '\n');
+            }
+        },
+        .RECALL => {
+            const entry = table.getPtr(keyword) orelse return error.NoMemoryFound;
+            try response.writer.writeAll(entry.items);
+        },
+    }
+    try handleTextResponse(parsed_body.value.id, response.written(), w);
+}
+
+const DIR_OP = enum {
     CHANGE,
     ROOT,
     CURRENT,
 };
 
-pub fn handleDirectory(op: dir_op, w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []u8) !void {
-    const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, .{
-        .ignore_unknown_fields = true,
-    });
+pub fn handleDirectory(op: DIR_OP, w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []u8) !void {
+    const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, JSON_PARSE_OPTS);
     defer parsed_body.deinit();
 
     const parsed_json: ToolRequest = parsed_body.value;
 
-    var response_text = Io.Writer.Allocating.init(alloc);
-    defer response_text.deinit();
+    var response = Io.Writer.Allocating.init(alloc);
+    defer response.deinit();
 
     switch (op) {
         .CHANGE => {
@@ -492,7 +571,7 @@ pub fn handleDirectory(op: dir_op, w: *Writer, alloc: Allocator, io: Io, dir: *I
                 return error.UseRootDirectoryCommand;
             }
             dir.* = try changeDir(dir, io, filename);
-            try response_text.writer.print("Changed directory to: {s}", .{filename});
+            try response.writer.print("Changed directory to: {s}", .{filename});
         },
         .CURRENT => {
             const root_dir = try rootDir(io);
@@ -505,42 +584,27 @@ pub fn handleDirectory(op: dir_op, w: *Writer, alloc: Allocator, io: Io, dir: *I
             defer alloc.free(current);
 
             if (std.mem.indexOfDiff(u8, root_path, current)) |idx| {
-                try response_text.writer.writeAll(current[idx..]);
-            }
-            else {
-                try response_text.writer.writeAll(current);
+                try response.writer.writeAll(current[idx..]);
+            } else {
+                try response.writer.writeAll(current);
             }
         },
         .ROOT => {
             dir.* = try rootDir(io);
-            try response_text.writer.print("Changed directory to root", .{});
+            try response.writer.print("Changed directory to root", .{});
         },
     }
 
-    const json_res = ToolResult{
-        .id = parsed_body.value.id,
-        .result = .{
-            .content = &[_]ContentType{
-                .{
-                    .type = "text",
-                    .text = response_text.written(),
-                },
-            },
-        },
-    };
-    var res_json_struct_fmt = json.fmt(json_res, OPTIONS);
-    try res_json_struct_fmt.format(w);
+    try handleTextResponse(parsed_body.value.id, response.written(), w);
 }
 
 fn handleArithmetic(w: *Writer, body: []u8, alloc: Allocator) !void {
-    const parsedBody = try json.parseFromSlice(ToolRequest, alloc, body, .{
-        .ignore_unknown_fields = true,
-    });
+    const parsedBody = try json.parseFromSlice(ToolRequest, alloc, body, JSON_PARSE_OPTS);
     defer parsedBody.deinit();
 
     const parsed_json: ToolRequest = parsedBody.value;
-    var response_text = Io.Writer.Allocating.init(alloc);
-    defer response_text.deinit();
+    var response = Io.Writer.Allocating.init(alloc);
+    defer response.deinit();
 
     const op = parsed_json.params.arguments.operation orelse return error.MissingOperator;
 
@@ -549,51 +613,34 @@ fn handleArithmetic(w: *Writer, body: []u8, alloc: Allocator) !void {
         hash("add"), hash("addition"), hash("+") => {
             const a = parsed_json.params.arguments.a orelse return error.MissingArgumentA;
             const b = parsed_json.params.arguments.b orelse return error.MissingArgumentB;
-            try response_text.writer.print("{d}", .{a + b});
+            try response.writer.print("{d}", .{a + b});
         },
         hash("sub"), hash("subtract"), hash("-") => {
             const a = parsed_json.params.arguments.a orelse return error.MissingArgumentA;
             const b = parsed_json.params.arguments.b orelse return error.MissingArgumentB;
-            try response_text.writer.print("{d}", .{a - b});
+            try response.writer.print("{d}", .{a - b});
         },
         hash("div"), hash("divide"), hash("/") => {
             const a = parsed_json.params.arguments.a orelse return error.MissingArgumentA;
             const b = parsed_json.params.arguments.b orelse return error.MissingArgumentB;
-            try response_text.writer.print("{d}", .{a / b});
+            try response.writer.print("{d}", .{a / b});
         },
         hash("mul"), hash("multiply"), hash("*") => {
             const a = parsed_json.params.arguments.a orelse return error.MissingArgumentA;
             const b = parsed_json.params.arguments.b orelse return error.MissingArgumentB;
-            try response_text.writer.print("{d}", .{a * b});
+            try response.writer.print("{d}", .{a * b});
         },
         hash("sqrt") => {
             const a = parsed_json.params.arguments.a orelse return error.MissingArgumentA;
-            try response_text.writer.print("{d}", .{std.math.sqrt(a)});
+            try response.writer.print("{d}", .{std.math.sqrt(a)});
         },
         else => return error.UnknownOperator,
     }
-
-    const response_json = ToolResult{
-        .id = parsed_json.id,
-        .result = .{
-            .content = &[_]ContentType{
-                .{
-                    .type = "text",
-                    .text = response_text.written(),
-                },
-            },
-        },
-    };
-    var res_json_struct_fmt = json.fmt(response_json, .{
-        .emit_null_optional_fields = false,
-    });
-    try res_json_struct_fmt.format(w);
+    try handleTextResponse(parsed_json.id, response.written(), w);
 }
 
 fn handleWrite(w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []u8) !void {
-    const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, .{
-        .ignore_unknown_fields = true,
-    });
+    const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, JSON_PARSE_OPTS);
     defer parsed_body.deinit();
 
     const parsed_json: ToolRequest = parsed_body.value;
@@ -607,30 +654,16 @@ fn handleWrite(w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []u8) !
     defer f.close(io);
     try f.writeStreamingAll(io, content);
 
-    var response_text = Io.Writer.Allocating.init(alloc);
-    defer response_text.deinit();
+    var response = Io.Writer.Allocating.init(alloc);
+    defer response.deinit();
 
-    try response_text.writer.print("{d} characters written to {s}", .{ content.len, filename });
+    try response.writer.print("{d} characters written to {s}", .{ content.len, filename });
 
-    const json_res = ToolResult{
-        .id = parsed_body.value.id,
-        .result = .{
-            .content = &[_]ContentType{
-                .{
-                    .type = "text",
-                    .text = response_text.written(),
-                },
-            },
-        },
-    };
-    var res_json_struct_fmt = json.fmt(json_res, OPTIONS);
-    try res_json_struct_fmt.format(w);
+    try handleTextResponse(parsed_body.value.id, response.written(), w);
 }
 
 fn handleInsert(w: *Writer, alloc: Allocator, io: Io, append: bool, dir: *Io.Dir, body: []u8) !void {
-    const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, .{
-        .ignore_unknown_fields = true,
-    });
+    const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, JSON_PARSE_OPTS);
     defer parsed_body.deinit();
 
     const parsed_json: ToolRequest = parsed_body.value;
@@ -649,30 +682,16 @@ fn handleInsert(w: *Writer, alloc: Allocator, io: Io, append: bool, dir: *Io.Dir
     };
     try f.writePositionalAll(io, content, start);
 
-    var response_text = Io.Writer.Allocating.init(alloc);
-    defer response_text.deinit();
+    var response = Io.Writer.Allocating.init(alloc);
+    defer response.deinit();
 
-    try response_text.writer.print("{d} characters written to {s} at index {d}", .{ content.len, filename, start });
+    try response.writer.print("{d} characters written to {s} at index {d}", .{ content.len, filename, start });
 
-    const json_res = ToolResult{
-        .id = parsed_body.value.id,
-        .result = .{
-            .content = &[_]ContentType{
-                .{
-                    .type = "text",
-                    .text = response_text.written(),
-                },
-            },
-        },
-    };
-    var res_json_struct_fmt = json.fmt(json_res, OPTIONS);
-    try res_json_struct_fmt.format(w);
+    try handleTextResponse(parsed_body.value.id, response.written(), w);
 }
 
 fn handleFileDelete(w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []u8) !void {
-    const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, .{
-        .ignore_unknown_fields = true,
-    });
+    const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, JSON_PARSE_OPTS);
     defer parsed_body.deinit();
 
     const parsed_json: ToolRequest = parsed_body.value;
@@ -684,30 +703,16 @@ fn handleFileDelete(w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []
 
     try dir.deleteFile(io, filename);
 
-    var response_text = Io.Writer.Allocating.init(alloc);
-    defer response_text.deinit();
+    var response = Io.Writer.Allocating.init(alloc);
+    defer response.deinit();
 
-    try response_text.writer.print("{s} deleted", .{filename});
+    try response.writer.print("{s} deleted", .{filename});
 
-    const json_res = ToolResult{
-        .id = parsed_body.value.id,
-        .result = .{
-            .content = &[_]ContentType{
-                .{
-                    .type = "text",
-                    .text = response_text.written(),
-                },
-            },
-        },
-    };
-    var res_json_struct_fmt = json.fmt(json_res, OPTIONS);
-    try res_json_struct_fmt.format(w);
+    try handleTextResponse(parsed_body.value.id, response.written(), w);
 }
 
 fn handleFileSize(w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []u8) !void {
-    const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, .{
-        .ignore_unknown_fields = true,
-    });
+    const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, JSON_PARSE_OPTS);
     defer parsed_body.deinit();
 
     const parsed_json: ToolRequest = parsed_body.value;
@@ -718,30 +723,16 @@ fn handleFileSize(w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []u8
     defer f.close(io);
     const len = try f.length(io);
 
-    var response_text = Io.Writer.Allocating.init(alloc);
-    defer response_text.deinit();
+    var response = Io.Writer.Allocating.init(alloc);
+    defer response.deinit();
 
-    try response_text.writer.print("{d}", .{len});
+    try response.writer.print("{d}", .{len});
 
-    const json_res = ToolResult{
-        .id = parsed_body.value.id,
-        .result = .{
-            .content = &[_]ContentType{
-                .{
-                    .type = "text",
-                    .text = response_text.written(),
-                },
-            },
-        },
-    };
-    var res_json_struct_fmt = json.fmt(json_res, OPTIONS);
-    try res_json_struct_fmt.format(w);
+    try handleTextResponse(parsed_body.value.id, response.written(), w);
 }
 
 fn handleRead(w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []u8) !void {
-    const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, .{
-        .ignore_unknown_fields = true,
-    });
+    const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, JSON_PARSE_OPTS);
     defer parsed_body.deinit();
 
     const parsed_json: ToolRequest = parsed_body.value;
@@ -761,25 +752,11 @@ fn handleRead(w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []u8) !v
 
     _ = try reader.interface.stream(&response.writer, .unlimited);
 
-    const json_res = ToolResult{
-        .id = parsed_body.value.id,
-        .result = .{
-            .content = &[_]ContentType{
-                .{
-                    .type = "text",
-                    .text = response.written(),
-                },
-            },
-        },
-    };
-    var res_json_struct_fmt = json.fmt(json_res, OPTIONS);
-    try res_json_struct_fmt.format(w);
+try handleTextResponse(parsed_body.value.id, response.written(), w);
 }
 
 fn handleReadSlice(w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []u8) !void {
-    const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, .{
-        .ignore_unknown_fields = true,
-    });
+    const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, JSON_PARSE_OPTS);
     defer parsed_body.deinit();
 
     const parsed_json: ToolRequest = parsed_body.value;
@@ -803,25 +780,11 @@ fn handleReadSlice(w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []u
 
     _ = try reader.interface.stream(&response.writer, if (length) |len| .limited(len) else .unlimited);
 
-    const json_res = ToolResult{
-        .id = parsed_body.value.id,
-        .result = .{
-            .content = &[_]ContentType{
-                .{
-                    .type = "text",
-                    .text = response.written(),
-                },
-            },
-        },
-    };
-    var res_json_struct_fmt = json.fmt(json_res, OPTIONS);
-    try res_json_struct_fmt.format(w);
+try handleTextResponse(parsed_body.value.id, response.written(), w);
 }
 
 fn handleDateTime(w: *Writer, alloc: Allocator, io: Io, body: []u8) !void {
-    const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, .{
-        .ignore_unknown_fields = true,
-    });
+    const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, JSON_PARSE_OPTS);
     defer parsed_body.deinit();
 
     var response = Io.Writer.Allocating.init(alloc);
@@ -843,27 +806,11 @@ fn handleDateTime(w: *Writer, alloc: Allocator, io: Io, body: []u8) !void {
         ds.getMinutesIntoHour(),
         ds.getSecondsIntoMinute(),
     });
-
-    const json_res = ToolResult{
-        .id = parsed_body.value.id,
-        .result = .{
-            .content = &[_]ContentType{
-                .{
-                    .type = "text",
-                    .text = response.written(),
-                },
-            },
-        },
-    };
-
-    var res_json_struct_fmt = json.fmt(json_res, OPTIONS);
-    try res_json_struct_fmt.format(w);
+try handleTextResponse(parsed_body.value.id, response.written(), w);
 }
 
 fn handleWebRequest(w: *Writer, alloc: Allocator, io: Io, body: []u8) !void {
-    const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, .{
-        .ignore_unknown_fields = true,
-    });
+    const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, JSON_PARSE_OPTS);
     defer parsed_body.deinit();
 
     const parsed_json: ToolRequest = parsed_body.value;
@@ -887,27 +834,11 @@ fn handleWebRequest(w: *Writer, alloc: Allocator, io: Io, body: []u8) !void {
     });
 
     try response.writer.print("\nSTATUS: {d} {s}", .{ @intFromEnum(res.status), @tagName(res.status) });
-
-    const json_res = ToolResult{
-        .id = parsed_body.value.id,
-        .result = .{
-            .content = &[_]ContentType{
-                .{
-                    .type = "text",
-                    .text = response.written(),
-                },
-            },
-        },
-    };
-
-    var res_json_struct_fmt = json.fmt(json_res, OPTIONS);
-    try res_json_struct_fmt.format(w);
+    try handleTextResponse(parsed_body.value.id, response.written(), w);
 }
 
 fn handleListFiles(w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []u8) !void {
-    const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, .{
-        .ignore_unknown_fields = true,
-    });
+    const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, JSON_PARSE_OPTS);
     defer parsed_body.deinit();
 
     var response = Io.Writer.Allocating.init(alloc);
@@ -925,21 +856,7 @@ fn handleListFiles(w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []u
     if (response.written().len == 0) {
         try response.writer.print("{{}}", .{});
     }
-
-    const json_res = ToolResult{
-        .id = parsed_body.value.id,
-        .result = .{
-            .content = &[_]ContentType{
-                .{
-                    .type = "text",
-                    .text = response.written(),
-                },
-            },
-        },
-    };
-
-    var res_json_struct_fmt = json.fmt(json_res, OPTIONS);
-    try res_json_struct_fmt.format(w);
+    try handleTextResponse(parsed_body.value.id, response.written(), w);
 }
 
 fn handleErrorResponse(w: *Writer, e: anyerror, id: usize, alloc: Allocator) !void {
@@ -965,10 +882,7 @@ fn handleErrorResponse(w: *Writer, e: anyerror, id: usize, alloc: Allocator) !vo
 }
 
 fn handleCommand(cmd: []const []const u8, w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []u8) !void {
-    _ = dir;
-    const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, .{
-        .ignore_unknown_fields = true,
-    });
+    const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, JSON_PARSE_OPTS);
     defer parsed_body.deinit();
 
     const parsed_json: ToolRequest = parsed_body.value;
@@ -984,22 +898,8 @@ fn handleCommand(cmd: []const []const u8, w: *Writer, alloc: Allocator, io: Io, 
     });
     defer alloc.free(concat_args);
 
-    try runCommand(alloc, io, &response.writer, concat_args);
-
-    const json_res = ToolResult{
-        .id = parsed_body.value.id,
-        .result = .{
-            .content = &[_]ContentType{
-                .{
-                    .type = "text",
-                    .text = response.written(),
-                },
-            },
-        },
-    };
-
-    var res_json_struct_fmt = json.fmt(json_res, OPTIONS);
-    try res_json_struct_fmt.format(w);
+    try runCommand(alloc, io, dir,&response.writer, concat_args);
+    try handleTextResponse(parsed_body.value.id, response.written(), w);
 }
 
 fn runCommand(alloc: Allocator, io: Io, dir: *Io.Dir, w: *Io.Writer, argv: []const []const u8) !void {
@@ -1017,4 +917,21 @@ fn runCommand(alloc: Allocator, io: Io, dir: *Io.Dir, w: *Io.Writer, argv: []con
     if (result.stderr.len == 0 and result.stdout.len == 0) {
         try w.print("Exited: {d}\n", .{result.term.exited});
     }
+}
+
+fn handleTextResponse(id: usize, text: []u8, w: *Io.Writer) !void {
+    const json_res = ToolResult{
+        .id = id,
+        .result = .{
+            .content = &[_]ContentType{
+                .{
+                    .type = "text",
+                    .text = text,
+                },
+            },
+        },
+    };
+
+    var res_json_struct_fmt = json.fmt(json_res, OPTIONS);
+    try res_json_struct_fmt.format(w);
 }

@@ -9,6 +9,7 @@ params: struct {
         a: ?f64 = null,
         b: ?f64 = null,
         filename: ?[]const u8 = null,
+        keyword: ?[]const u8 = null,
         content: ?[]const u8 = null,
         start: ?usize = null,
         length: ?usize = null,

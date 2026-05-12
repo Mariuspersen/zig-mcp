@@ -37,6 +37,10 @@ inputSchema: struct {
             type: []const u8 = "string",
             description: []const u8 = "Content to be put in file",
         } = null,
+        keyword: ?struct {
+            type: []const u8 = "string",
+            description: []const u8 = "Keyword used in recalling and remembering",
+        } = null,
         substring: ?struct {
             type: []const u8 = "string",
             description: []const u8 = "Substring to find in file",
