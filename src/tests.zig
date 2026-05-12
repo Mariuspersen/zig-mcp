@@ -91,5 +91,51 @@ test "Test Directory Operations" {
         body.written(),
     );
     try testing.expectStringEndsWith(w.written(), "\\\\hello\\\\world\"}]}}");
-    std.debug.print("{s}", .{w.written()});
+    w.clearRetainingCapacity();
+    body.clearRetainingCapacity();
+    const root_json = ToolRequest{
+        .id = 0,
+        .method = "root_directory",
+        .params = .{
+            .name = "",
+            .arguments = .{},
+        },
+    };
+    var root_formatter = json.fmt(
+        root_json,
+        main.OPTIONS,
+    );
+    try root_formatter.format(&body.writer);
+    try main.handleDirectory(
+        .ROOT,
+        &w.writer,
+        gba,
+        io,
+        &tmp_dir.dir,
+        body.written(),
+    );
+    w.clearRetainingCapacity();
+    body.clearRetainingCapacity();
+    const current_after_json = ToolRequest{
+        .id = 0,
+        .method = "current_directory",
+        .params = .{
+            .name = "",
+            .arguments = .{},
+        },
+    };
+    var current_after_formatter = json.fmt(
+        current_after_json,
+        main.OPTIONS,
+    );
+    try current_after_formatter.format(&body.writer);
+    try main.handleDirectory(
+        .CURRENT,
+        &w.writer,
+        gba,
+        io,
+        &tmp_dir.dir,
+        body.written(),
+    );
+    try testing.expectStringEndsWith(w.written(), "\\\\storage\"}]}}");
 }
