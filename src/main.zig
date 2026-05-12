@@ -10,7 +10,7 @@ const epoch = time.epoch;
 const Writer = Io.Writer;
 const Allocator = std.mem.Allocator;
 
-const Table = std.StringHashMap(std.ArrayList(u8));
+pub const Table = std.StringHashMap(std.ArrayList(u8));
 
 const IpAddress = net.IpAddress;
 
