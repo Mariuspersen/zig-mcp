@@ -16,7 +16,14 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/main.zig"),
     });
 
+    const tests = b.addModule(name, .{
+        .optimize = optimize,
+        .target = target,
+        .root_source_file = b.path("src/tests.zig"),
+    });
+
     main.addImport("config", config);
+    tests.addImport("config", config);
 
     const exe = b.addExecutable(.{
         .name = name,
@@ -29,7 +36,7 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run the tests");
 
     const main_test = b.addTest(.{
-        .root_module = main,
+        .root_module = tests,
         
     });
 

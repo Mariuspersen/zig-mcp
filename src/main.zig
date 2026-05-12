@@ -17,7 +17,7 @@ const hash = std.hash.Crc32.hash;
 const PROTOCOL_VERSION = Config.PROTOCOL_VERSION;
 const JSONRPC = Config.JSONRPC;
 
-const OPTIONS = json.Stringify.Options{
+pub const OPTIONS = json.Stringify.Options{
     .emit_nonportable_numbers_as_strings = true,
     .emit_null_optional_fields = false,
     .escape_unicode = true,
@@ -25,7 +25,7 @@ const OPTIONS = json.Stringify.Options{
     .emit_strings_as_arrays = false,
 };
 
-const DIR_OPTIONS = Io.Dir.OpenOptions{
+pub const DIR_OPTIONS = Io.Dir.OpenOptions{
     .follow_symlinks = false,
     .iterate = true,
     .access_sub_paths = false,
@@ -83,17 +83,16 @@ pub fn main(init: std.process.Init) !void {
 }
 
 fn rootDir(io: Io) !Io.Dir {
-    return Io.Dir.cwd().openDir(io, "storage", DIR_OPTIONS) catch blk: {
-        try Io.Dir.cwd().createDir(io, "storage", .default_dir);
-        break :blk try Io.Dir.cwd().openDir(io, "storage", DIR_OPTIONS);
-    };
+    const root_name = "storage";
+    return try Io.Dir.cwd().createDirPathOpen(io, root_name, .{
+        .open_options = DIR_OPTIONS
+    });
 }
 
 fn changeDir(dir: *Io.Dir, io: Io, new_dir: []const u8) !Io.Dir {
-    return dir.openDir(io, new_dir, DIR_OPTIONS) catch blk: {
-        try dir.createDir(io, new_dir, .default_dir);
-        break :blk try dir.openDir(io, new_dir, DIR_OPTIONS);
-    };
+    return try dir.createDirPathOpen(io, new_dir, .{
+        .open_options = DIR_OPTIONS
+    });
 }
 
 fn errorWriter(e: anyerror) void {
@@ -477,7 +476,7 @@ const dir_op = enum {
     CURRENT,
 };
 
-fn handleDirectory(op: dir_op, w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []u8) !void {
+pub fn handleDirectory(op: dir_op, w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []u8) !void {
     const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, .{
         .ignore_unknown_fields = true,
     });
@@ -498,10 +497,21 @@ fn handleDirectory(op: dir_op, w: *Writer, alloc: Allocator, io: Io, dir: *Io.Di
             try response_text.writer.print("Changed directory to: {s}", .{filename});
         },
         .CURRENT => {
+            const root_dir = try rootDir(io);
+            defer root_dir.close(io);
+
+            const root_path = try root_dir.realPathFileAlloc(io, ".", alloc);
+            defer alloc.free(root_path);
+
             const current = try dir.realPathFileAlloc(io, ".", alloc);
             defer alloc.free(current);
 
-            try response_text.writer.writeAll(current);
+            if (std.mem.indexOfDiff(u8, root_path, current)) |idx| {
+                try response_text.writer.writeAll(current[idx..]);
+            }
+            else {
+                try response_text.writer.writeAll(current);
+            }
         },
         .ROOT => {
             dir.* = try rootDir(io);
@@ -522,40 +532,6 @@ fn handleDirectory(op: dir_op, w: *Writer, alloc: Allocator, io: Io, dir: *Io.Di
     };
     var res_json_struct_fmt = json.fmt(json_res, OPTIONS);
     try res_json_struct_fmt.format(w);
-}
-
-test "Make sure it can't escape it's confines" {
-    const gba = std.testing.allocator;
-    const io = std.testing.io;
-    var tmp_dir = std.testing.tmpDir(DIR_OPTIONS);
-    var w = Io.Writer.Allocating.init(gba);
-    defer w.deinit();
-
-    var body = Io.Writer.Allocating.init(gba);
-    defer body.deinit();
-
-    const body_json = ToolRequest{
-        .id = 0,
-        .method = "change_directory",
-        .params = .{
-            .name = "",
-            .arguments = .{ .filename = ".." },
-        },
-    };
-    var body_formatter = json.fmt(body_json, OPTIONS);
-    try body_formatter.format(&body.writer);
-
-    try std.testing.expectError(
-        error.UseRootDirectoryCommand,
-        handleDirectory(
-            .CHANGE,
-            &w.writer,
-            gba,
-            io,
-            &tmp_dir.dir,
-            body.written(),
-        ),
-    );
 }
 
 fn handleArithmetic(w: *Writer, body: []u8, alloc: Allocator) !void {
@@ -1028,7 +1004,8 @@ fn handleCommand(cmd: []const []const u8, w: *Writer, alloc: Allocator, io: Io, 
     try res_json_struct_fmt.format(w);
 }
 
-fn runCommand(alloc: Allocator, io: Io, w: *Io.Writer, argv: []const []const u8) !void {
+fn runCommand(alloc: Allocator, io: Io, dir: *Io.Dir, w: *Io.Writer, argv: []const []const u8) !void {
+    _ = dir;
     const result = try std.process.run(alloc, io, .{
         .argv = argv,
         .cwd = .{ .path = "storage" },
