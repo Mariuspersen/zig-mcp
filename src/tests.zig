@@ -71,12 +71,10 @@ test "Test Directory Operations" {
     body.clearRetainingCapacity();
     const current_json = ToolRequest{
         .id = 0,
-        .method = "change_directory",
+        .method = "current_directory",
         .params = .{
             .name = "",
-            .arguments = .{
-                .filename = "hello/world",
-            },
+            .arguments = .{},
         },
     };
     var current_formatter = json.fmt(
@@ -93,4 +91,5 @@ test "Test Directory Operations" {
         body.written(),
     );
     try testing.expectStringEndsWith(w.written(), "\\\\hello\\\\world\"}]}}");
+    std.debug.print("{s}", .{w.written()});
 }

@@ -331,7 +331,6 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
                         .type = "object",
                         .required = &.{},
                         .properties = .{
-                            .filename = .{},
                         },
                     },
                 },
@@ -343,7 +342,6 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
                         .type = "object",
                         .required = &.{},
                         .properties = .{
-                            .filename = .{},
                         },
                     },
                 },
