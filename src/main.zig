@@ -19,7 +19,7 @@ const hash = std.hash.Crc32.hash;
 const PROTOCOL_VERSION = Config.PROTOCOL_VERSION;
 const JSONRPC = Config.JSONRPC;
 
-pub const OPTIONS = json.Stringify.Options{
+pub const STRINGIFY_OPTIONS = json.Stringify.Options{
     .emit_nonportable_numbers_as_strings = true,
     .emit_null_optional_fields = false,
     .escape_unicode = true,
@@ -197,7 +197,7 @@ fn handleInitialize(w: *Writer, body: []u8, alloc: Allocator) !void {
             .serverInfo = .{},
         },
     };
-    var res_json_struct_fmt = json.fmt(init_res_json, OPTIONS);
+    var res_json_struct_fmt = json.fmt(init_res_json, STRINGIFY_OPTIONS);
     try res_json_struct_fmt.format(w);
 }
 
@@ -428,6 +428,17 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
                     },
                 },
                 ToolEntry{
+                    .name = "openscad",
+                    .description = "OpenSCAD is software for creating solid 3D CAD objects",
+                    .title = "OpenSCAD",
+                    .inputSchema = .{
+                        .required = &.{"arguments"},
+                        .properties = .{
+                            .arguments = .{},
+                        },
+                    },
+                },
+                ToolEntry{
                     .name = "valgrind",
                     .description = "a programming tool for memory debugging, memory leak detection, and profiling.",
                     .title = "Valgrind",
@@ -495,6 +506,7 @@ fn handleCallTools(w: *Writer, alloc: Allocator, dir: *Io.Dir, io: Io, map: *con
         hash("valgrind") => handleCommand(&.{"valgrind"}, w, alloc, io, dir, body),
         hash("grep") => handleCommand(&.{"grep"}, w, alloc, io, dir, body),
         hash("git") => handleCommand(&.{"git"}, w, alloc, io, dir, body),
+        hash("openscad") => handleCommand(&.{"openscad"}, w, alloc, io, dir, body),
         hash("change_directory") => handleDirectory(.CHANGE, w, alloc, io, dir, body),
         hash("current_directory") => handleDirectory(.CURRENT, w, alloc, io, dir, body),
         hash("root_directory") => handleDirectory(.ROOT, w, alloc, io, dir, body),
@@ -535,7 +547,6 @@ pub fn handleMemory(op: MEM_OP, w: *Writer, alloc: Allocator, body: []u8, table:
             try entry.appendSlice(alloc, "- ");
             try entry.appendSlice(alloc, content);
             try entry.append(alloc, '\n');
-            
         },
         .RECALL => {
             const entry = table.getPtr(keyword) orelse return error.NoMemoryFound;
@@ -748,7 +759,7 @@ fn handleRead(w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []u8) !v
 
     _ = try reader.interface.stream(&response.writer, .unlimited);
 
-try handleTextResponse(parsed_body.value.id, response.written(), w);
+    try handleTextResponse(parsed_body.value.id, response.written(), w);
 }
 
 fn handleReadSlice(w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []u8) !void {
@@ -776,7 +787,7 @@ fn handleReadSlice(w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []u
 
     _ = try reader.interface.stream(&response.writer, if (length) |len| .limited(len) else .unlimited);
 
-try handleTextResponse(parsed_body.value.id, response.written(), w);
+    try handleTextResponse(parsed_body.value.id, response.written(), w);
 }
 
 fn handleDateTime(w: *Writer, alloc: Allocator, io: Io, body: []u8) !void {
@@ -802,7 +813,7 @@ fn handleDateTime(w: *Writer, alloc: Allocator, io: Io, body: []u8) !void {
         ds.getMinutesIntoHour(),
         ds.getSecondsIntoMinute(),
     });
-try handleTextResponse(parsed_body.value.id, response.written(), w);
+    try handleTextResponse(parsed_body.value.id, response.written(), w);
 }
 
 fn handleWebRequest(w: *Writer, alloc: Allocator, io: Io, body: []u8) !void {
@@ -873,7 +884,7 @@ fn handleErrorResponse(w: *Writer, e: anyerror, id: usize, alloc: Allocator) !vo
             .isError = true,
         },
     };
-    var res_json_struct_fmt = json.fmt(response_json, OPTIONS);
+    var res_json_struct_fmt = json.fmt(response_json, STRINGIFY_OPTIONS);
     try res_json_struct_fmt.format(w);
 }
 
@@ -894,7 +905,7 @@ fn handleCommand(cmd: []const []const u8, w: *Writer, alloc: Allocator, io: Io, 
     });
     defer alloc.free(concat_args);
 
-    try runCommand(alloc, io, dir,&response.writer, concat_args);
+    try runCommand(alloc, io, dir, &response.writer, concat_args);
     try handleTextResponse(parsed_body.value.id, response.written(), w);
 }
 
@@ -928,6 +939,6 @@ fn handleTextResponse(id: usize, text: []u8, w: *Io.Writer) !void {
         },
     };
 
-    var res_json_struct_fmt = json.fmt(json_res, OPTIONS);
+    var res_json_struct_fmt = json.fmt(json_res, STRINGIFY_OPTIONS);
     try res_json_struct_fmt.format(w);
 }
