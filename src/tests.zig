@@ -211,5 +211,8 @@ test "Check memory recalling" {
         body.written(),
         &table,
     );
-    try testing.expectStringEndsWith(w.written(), content ++ "}]}}");
+    try testing.expectStringEndsWith(
+        w.written(),
+        "are very dumb and I am one, double and triple check everything I do, prompt the user if I'm doing it right\\nMake sure the user knows exactly what I'm doing, so I can be corrected early in the process.\\n\"" ++ "}]}}",
+    );
 }
