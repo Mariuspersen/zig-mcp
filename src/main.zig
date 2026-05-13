@@ -525,21 +525,17 @@ pub fn handleMemory(op: MEM_OP, w: *Writer, alloc: Allocator, body: []u8, table:
     switch (op) {
         .REMEMBER => {
             const content = parsed_json.params.arguments.content orelse return error.NoKeywordProvided;
-            const entry = table.getPtr(keyword);
-            if (entry) |array| {
-                try array.appendSlice(alloc, "- ");
-                try array.appendSlice(alloc, content);
-                try array.append(alloc, '\n');
-            } else {
+            const entry = table.getPtr(keyword) orelse blk: {
                 try table.put(
                     try alloc.dupe(u8, keyword),
                     try .initCapacity(alloc, content.len),
                 );
-                const new_entry = table.getPtr(keyword) orelse unreachable;
-                try new_entry.appendSlice(alloc, "- ");
-                try new_entry.appendSlice(alloc, content);
-                try new_entry.append(alloc, '\n');
-            }
+                break :blk table.getPtr(keyword) orelse unreachable;
+            };
+            try entry.appendSlice(alloc, "- ");
+            try entry.appendSlice(alloc, content);
+            try entry.append(alloc, '\n');
+            
         },
         .RECALL => {
             const entry = table.getPtr(keyword) orelse return error.NoMemoryFound;
