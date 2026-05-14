@@ -39,6 +39,28 @@ pub const DIR_OPTIONS = Io.Dir.OpenOptions{
     .access_sub_paths = false,
 };
 
+pub const EXTRA_HEADERS: []const http.Header = &.{
+    .{
+        .name = "Access-Control-Allow-Origin",
+        .value = "*",
+    },
+    .{
+        .name = "Access-Control-Allow-Methods",
+        .value = "GET, POST, PUT, DELETE, OPTIONS",
+    },
+    .{
+        .name = "Access-Control-Allow-Headers",
+        .value = "Content-Type, Authorization, X-Requested-With, mcp-protocol-version",
+    },
+};
+
+pub const JSON_HEADER: []const http.Header = &.{
+    .{
+        .name = "Content-Type",
+        .value = "application/json",
+    },
+};
+
 const MethodJson = @import("method_only.zig");
 const ToolNameReq = @import("tool_name_req.zig");
 const InitResponse = @import("init_response.zig");
@@ -131,11 +153,19 @@ fn handleConnection(alloc: Allocator, s: net.Stream, io: Io, dir: *Io.Dir, map: 
 
     var req = try http_server.receiveHead();
 
+    try stdout.print("HEAD: {s}\n", .{req.head_buffer});
+    try stdout.flush();
+
     var it = req.iterateHeaders();
     var len: usize = 0;
     while (it.next()) |header| if (std.mem.eql(u8, "Content-Length", header.name)) {
         len = try std.fmt.parseInt(usize, header.value, 10);
     };
+
+    if (len == 0) {
+        try req.respond("", .{ .extra_headers = EXTRA_HEADERS, .status = .no_content });
+        return;
+    }
 
     const tx_buf = try alloc.alloc(u8, len);
     defer alloc.free(tx_buf);
@@ -175,13 +205,25 @@ fn handleConnection(alloc: Allocator, s: net.Stream, io: Io, dir: *Io.Dir, map: 
             table,
         ),
         else => {
-            try req.respond("{}", .{ .status = .not_found });
+            try req.respond(
+                "{}",
+                .{
+                    .status = .not_found,
+                    .extra_headers = JSON_HEADER,
+                },
+            );
             return;
         },
     }
     try stdout.print("RESPONSE: {s}\n", .{res_writer.written()});
     try stdout.flush();
-    try req.respond(res_writer.written(), .{ .status = .ok });
+    try req.respond(
+        res_writer.written(),
+        .{
+            .status = .ok,
+            .extra_headers = EXTRA_HEADERS ++ JSON_HEADER,
+        },
+    );
 }
 
 fn handleInitialize(w: *Writer, body: []u8, alloc: Allocator) !void {
