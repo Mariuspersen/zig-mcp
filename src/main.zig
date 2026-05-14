@@ -153,9 +153,6 @@ fn handleConnection(alloc: Allocator, s: net.Stream, io: Io, dir: *Io.Dir, map: 
 
     var req = try http_server.receiveHead();
 
-    try stdout.print("HEAD: {s}\n", .{req.head_buffer});
-    try stdout.flush();
-
     var it = req.iterateHeaders();
     var len: usize = 0;
     while (it.next()) |header| if (std.mem.eql(u8, "Content-Length", header.name)) {
@@ -180,7 +177,8 @@ fn handleConnection(alloc: Allocator, s: net.Stream, io: Io, dir: *Io.Dir, map: 
     const hash_method = hash(methodJson.value.method);
     methodJson.deinit();
 
-    try stdout.print("REQUEST: {s}\n", .{body});
+    try s.socket.address.format(stdout);
+    try stdout.print(" -> REQUEST: {s} -> ", .{body});
     switch (hash_method) {
         hash("initialize") => try handleInitialize(
             &res_writer.writer,
@@ -360,20 +358,18 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
                     .inputSchema = .{
                         .type = "object",
                         .required = &.{},
-                        .properties = .{
-                            .filename = .{},
-                        },
+                        .properties = .{ .filename = .{}, .directory_name = .{} },
                     },
                 },
                 ToolEntry{
                     .name = "change_directory",
-                    .description = "Changes the current working directory to the given folder.",
+                    .description = "Changes the current working directory to the given folder. Creates the folder if it does not exist.",
                     .title = "Change Directory",
                     .inputSchema = .{
                         .type = "object",
-                        .required = &.{},
+                        .required = &.{"directory_name"},
                         .properties = .{
-                            .filename = .{},
+                            .directory_name = .{},
                         },
                     },
                 },
@@ -625,11 +621,34 @@ pub fn handleDirectory(op: DIR_OP, w: *Writer, alloc: Allocator, io: Io, dir: *I
 
     switch (op) {
         .CHANGE => {
-            const filename = parsed_json.params.arguments.filename orelse return error.MissingFilename;
+            const filename = parsed_json.params.arguments.directory_name orelse
+                return error.NoDirectoryNameSupplied;
+
             if (std.fs.path.isAbsolute(filename)) {
                 return error.AbsolutePathsNotAllowed;
             } else if (std.mem.find(u8, filename, "..")) |_| {
-                return error.UseHomeDirectoryCommand;
+                var up_dir = try changeDir(dir, io, filename);
+                var root_dir = try rootDir(io);
+
+                const up_dir_path = try up_dir.realPathFileAlloc(io, ".", alloc);
+                defer alloc.free(up_dir_path);
+
+                const root_dir_path = try root_dir.realPathFileAlloc(io, ".", alloc);
+                defer alloc.free(root_dir_path);
+
+                std.debug.print("{s}\n{s}\n", .{
+                    up_dir_path,
+                    root_dir_path,
+                });
+
+                if (root_dir_path.len > up_dir_path.len) {
+                    try response.writer.print("Unable to move up any further", .{});
+                    up_dir.close(io);
+                    root_dir.close(io);
+                } else {
+                    try response.writer.print("Moved up a directory", .{});
+                    dir.* = try changeDir(dir, io, filename);
+                }
             } else if (std.mem.find(u8, filename, "~")) |_| {
                 dir.* = try rootDir(io);
                 try response.writer.print("Changed directory to ~", .{});
@@ -771,7 +790,9 @@ fn handleFileDelete(w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []
 
     const parsed_json: ToolRequest = parsed_body.value;
 
-    const filename = parsed_json.params.arguments.filename orelse return error.MissingFilename;
+    const filename = parsed_json.params.arguments.filename orelse
+        parsed_json.params.arguments.directory_name orelse
+        return error.MissingFilename;
 
     //Sigh
     if (std.fs.path.isAbsolute(filename)) {

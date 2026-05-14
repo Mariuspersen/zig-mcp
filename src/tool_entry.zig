@@ -33,6 +33,10 @@ inputSchema: struct {
             type: []const u8 = "string",
             description: []const u8 = "Exact name of the file (with extension if it has one)",
         } = null,
+        directory_name: ?struct {
+            type: []const u8 = "string",
+            description: []const u8 = "Exact name of the directory",
+        } = null,
         content: ?struct {
             type: []const u8 = "string",
             description: []const u8 = "Full text to write into the file. This replaces everything in the file",
