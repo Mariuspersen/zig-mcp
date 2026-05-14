@@ -16,7 +16,7 @@ test "Test Directory Operations" {
     var body = Io.Writer.Allocating.init(gba);
     defer body.deinit();
 
-    const body_json = ToolRequest{
+    var req = ToolRequest{
         .id = 0,
         .method = "change_directory",
         .params = .{
@@ -26,11 +26,11 @@ test "Test Directory Operations" {
             },
         },
     };
-    var body_formatter = json.fmt(
-        body_json,
-        main.OPTIONS,
+    var formatter = json.fmt(
+        req,
+        main.STRINGIFY_OPTIONS,
     );
-    try body_formatter.format(&body.writer);
+    try formatter.format(&body.writer);
     try std.testing.expectError(
         error.UseRootDirectoryCommand,
         main.handleDirectory(
@@ -44,7 +44,7 @@ test "Test Directory Operations" {
     );
     w.clearRetainingCapacity();
     body.clearRetainingCapacity();
-    const create_json = ToolRequest{
+    req = ToolRequest{
         .id = 0,
         .method = "change_directory",
         .params = .{
@@ -54,11 +54,11 @@ test "Test Directory Operations" {
             },
         },
     };
-    var create_formatter = json.fmt(
-        create_json,
-        main.OPTIONS,
+    formatter = json.fmt(
+        req,
+        main.STRINGIFY_OPTIONS,
     );
-    try create_formatter.format(&body.writer);
+    try formatter.format(&body.writer);
     try main.handleDirectory(
         .CHANGE,
         &w.writer,
@@ -69,7 +69,7 @@ test "Test Directory Operations" {
     );
     w.clearRetainingCapacity();
     body.clearRetainingCapacity();
-    const current_json = ToolRequest{
+    req = ToolRequest{
         .id = 0,
         .method = "current_directory",
         .params = .{
@@ -77,11 +77,11 @@ test "Test Directory Operations" {
             .arguments = .{},
         },
     };
-    var current_formatter = json.fmt(
-        current_json,
-        main.OPTIONS,
+    formatter = json.fmt(
+        req,
+        main.STRINGIFY_OPTIONS,
     );
-    try current_formatter.format(&body.writer);
+    try formatter.format(&body.writer);
     try main.handleDirectory(
         .CURRENT,
         &w.writer,
@@ -90,7 +90,7 @@ test "Test Directory Operations" {
         &tmp_dir.dir,
         body.written(),
     );
-    try testing.expectStringEndsWith(w.written(), "\\\\hello\\\\world\"}]}}");
+    try testing.expectStringEndsWith(w.written(), "/hello/world\"}]}}");
     w.clearRetainingCapacity();
     body.clearRetainingCapacity();
     const root_json = ToolRequest{
@@ -101,11 +101,11 @@ test "Test Directory Operations" {
             .arguments = .{},
         },
     };
-    var root_formatter = json.fmt(
+    formatter = json.fmt(
         root_json,
-        main.OPTIONS,
+        main.STRINGIFY_OPTIONS,
     );
-    try root_formatter.format(&body.writer);
+    try formatter.format(&body.writer);
     try main.handleDirectory(
         .ROOT,
         &w.writer,
@@ -116,7 +116,7 @@ test "Test Directory Operations" {
     );
     w.clearRetainingCapacity();
     body.clearRetainingCapacity();
-    const current_after_json = ToolRequest{
+    req = ToolRequest{
         .id = 0,
         .method = "current_directory",
         .params = .{
@@ -124,11 +124,11 @@ test "Test Directory Operations" {
             .arguments = .{},
         },
     };
-    var current_after_formatter = json.fmt(
-        current_after_json,
-        main.OPTIONS,
+    formatter = json.fmt(
+        req,
+        main.STRINGIFY_OPTIONS,
     );
-    try current_after_formatter.format(&body.writer);
+    try formatter.format(&body.writer);
     try main.handleDirectory(
         .CURRENT,
         &w.writer,
@@ -137,7 +137,25 @@ test "Test Directory Operations" {
         &tmp_dir.dir,
         body.written(),
     );
-    try testing.expectStringEndsWith(w.written(), "\\\\storage\"}]}}");
+    try testing.expectStringEndsWith(w.written(), "/storage\"}]}}");
+    req = ToolRequest{
+        .id = 0,
+        .method = "change_directory",
+        .params = .{
+            .name = "",
+            .arguments = .{
+                .filename = "/",
+            },
+        },
+    };
+    formatter = json.fmt(
+        req,
+        main.STRINGIFY_OPTIONS,
+    );
+    try formatter.format(&body.writer);
+    std.debug.print("{s}\n", .{w.written()});
+    w.clearRetainingCapacity();
+    body.clearRetainingCapacity();
 }
 
 test "Check memory recalling" {
@@ -176,7 +194,7 @@ test "Check memory recalling" {
     };
     var body_formatter = json.fmt(
         body_json,
-        main.OPTIONS,
+        main.STRINGIFY_OPTIONS,
     );
     try body_formatter.format(&body.writer);
 
@@ -201,7 +219,7 @@ test "Check memory recalling" {
     };
     body_formatter = json.fmt(
         body_json,
-        main.OPTIONS,
+        main.STRINGIFY_OPTIONS,
     );
     try body_formatter.format(&body.writer);
     try main.handleMemory(

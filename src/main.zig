@@ -185,7 +185,7 @@ fn handleConnection(alloc: Allocator, s: net.Stream, io: Io, dir: *Io.Dir, map: 
 }
 
 fn handleInitialize(w: *Writer, body: []u8, alloc: Allocator) !void {
-    const parsedBody = try json.parseFromSlice(InitRequest, alloc, body, .{});
+    const parsedBody = try json.parseFromSlice(InitRequest, alloc, body, JSON_PARSE_OPTS);
     defer parsedBody.deinit();
 
     const req_json: InitRequest = parsedBody.value;
@@ -202,7 +202,7 @@ fn handleInitialize(w: *Writer, body: []u8, alloc: Allocator) !void {
 }
 
 fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
-    const parsedBody = try json.parseFromSlice(WhichTool, alloc, body, .{});
+    const parsedBody = try json.parseFromSlice(WhichTool, alloc, body, JSON_PARSE_OPTS);
     defer parsedBody.deinit();
 
     const res_json_struct = ToolResponse{
@@ -313,7 +313,7 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
                 },
                 ToolEntry{
                     .name = "file_delete",
-                    .description = "Delete a file",
+                    .description = "Delete a file or a directory",
                     .title = "File Delete",
                     .inputSchema = .{
                         .type = "object",
@@ -346,8 +346,8 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
                     },
                 },
                 ToolEntry{
-                    .name = "root_directory",
-                    .description = "Return to the root directory",
+                    .name = "home_directory",
+                    .description = "Return to the home directory",
                     .title = "Root Directory",
                     .inputSchema = .{
                         .type = "object",
@@ -417,6 +417,17 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
                     },
                 },
                 ToolEntry{
+                    .name = "make",
+                    .description = "GNU Make utility to build projects",
+                    .title = "Make",
+                    .inputSchema = .{
+                        .required = &.{"arguments"},
+                        .properties = .{
+                            .arguments = .{},
+                        },
+                    },
+                },
+                ToolEntry{
                     .name = "man",
                     .description = "man command for reading system reference manuals",
                     .title = "Manual Pages",
@@ -475,9 +486,7 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
         },
     };
 
-    var res_json_struct_fmt = json.fmt(res_json_struct, .{
-        .emit_null_optional_fields = false,
-    });
+    var res_json_struct_fmt = json.fmt(res_json_struct, STRINGIFY_OPTIONS);
     try res_json_struct_fmt.format(w);
 }
 
@@ -502,6 +511,7 @@ fn handleCallTools(w: *Writer, alloc: Allocator, dir: *Io.Dir, io: Io, map: *con
         hash("date_time") => handleDateTime(w, alloc, io, body),
         hash("web_request") => handleWebRequest(w, alloc, io, body),
         hash("gcc") => handleCommand(&.{"gcc"}, w, alloc, io, dir, body),
+        hash("make") => handleCommand(&.{"make"}, w, alloc, io, dir, body),
         hash("man") => handleCommand(&.{"man"}, w, alloc, io, dir, body),
         hash("valgrind") => handleCommand(&.{"valgrind"}, w, alloc, io, dir, body),
         hash("grep") => handleCommand(&.{"grep"}, w, alloc, io, dir, body),
@@ -509,7 +519,7 @@ fn handleCallTools(w: *Writer, alloc: Allocator, dir: *Io.Dir, io: Io, map: *con
         hash("openscad") => handleCommand(&.{"openscad"}, w, alloc, io, dir, body),
         hash("change_directory") => handleDirectory(.CHANGE, w, alloc, io, dir, body),
         hash("current_directory") => handleDirectory(.CURRENT, w, alloc, io, dir, body),
-        hash("root_directory") => handleDirectory(.ROOT, w, alloc, io, dir, body),
+        hash("home_directory") => handleDirectory(.ROOT, w, alloc, io, dir, body),
         hash("remember") => handleMemory(.REMEMBER, w, alloc, body, table),
         hash("recall") => handleMemory(.RECALL, w, alloc, body, table),
         else => handleErrorResponse(w, error.NoSuchMethod, id, alloc),
@@ -574,11 +584,17 @@ pub fn handleDirectory(op: DIR_OP, w: *Writer, alloc: Allocator, io: Io, dir: *I
     switch (op) {
         .CHANGE => {
             const filename = parsed_json.params.arguments.filename orelse return error.MissingFilename;
-            if (std.mem.find(u8, filename, "..")) |_| {
-                return error.UseRootDirectoryCommand;
+            if (std.fs.path.isAbsolute(filename)) {
+                return error.AbsolutePathsNotAllowed;
+            } else if (std.mem.find(u8, filename, "..")) |_| {
+                return error.UseHomeDirectoryCommand;
+            } else if (std.mem.find(u8, filename, "~")) |_| {
+                dir.* = try rootDir(io);
+                try response.writer.print("Changed directory to ~", .{});
+            } else {
+                dir.* = try changeDir(dir, io, filename);
+                try response.writer.print("Changed directory to: {s}", .{filename});
             }
-            dir.* = try changeDir(dir, io, filename);
-            try response.writer.print("Changed directory to: {s}", .{filename});
         },
         .CURRENT => {
             const root_dir = try rootDir(io);
@@ -592,13 +608,15 @@ pub fn handleDirectory(op: DIR_OP, w: *Writer, alloc: Allocator, io: Io, dir: *I
 
             if (std.mem.indexOfDiff(u8, root_path, current)) |idx| {
                 try response.writer.writeAll(current[idx..]);
+            } else if (std.mem.eql(u8, root_path, current)) {
+                try response.writer.writeAll("~");
             } else {
                 try response.writer.writeAll(current);
             }
         },
         .ROOT => {
             dir.* = try rootDir(io);
-            try response.writer.print("Changed directory to root", .{});
+            try response.writer.print("Changed directory to ~", .{});
         },
     }
 
@@ -655,6 +673,10 @@ fn handleWrite(w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []u8) !
     const filename = parsed_json.params.arguments.filename orelse return error.MissingFilename;
     const content = parsed_json.params.arguments.content orelse return error.MissingContent;
 
+    if (std.fs.path.isAbsolute(filename)) {
+        return error.AbsolutePathsNotAllowed;
+    }
+
     const f = try dir.createFile(io, filename, .{
         .resolve_beneath = true,
     });
@@ -677,6 +699,10 @@ fn handleInsert(w: *Writer, alloc: Allocator, io: Io, append: bool, dir: *Io.Dir
 
     const filename = parsed_json.params.arguments.filename orelse return error.MissingFilename;
     const content = parsed_json.params.arguments.content orelse return error.MissingContent;
+
+    if (std.fs.path.isAbsolute(filename)) {
+        return error.AbsolutePathsNotAllowed;
+    }
 
     const f = try dir.openFile(io, filename, .{
         .mode = .write_only,
@@ -705,10 +731,18 @@ fn handleFileDelete(w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []
 
     const filename = parsed_json.params.arguments.filename orelse return error.MissingFilename;
 
+    //Sigh
+    if (std.fs.path.isAbsolute(filename)) {
+        return error.AbsolutePathsNotAllowed;
+    }
+
     //Maybe not try to delete the .git folder you dumbass AI????
     if (std.mem.startsWith(u8, filename, ".git")) return error.PermissionDenied;
 
-    try dir.deleteFile(io, filename);
+    dir.deleteFile(io, filename) catch |e| switch (e) {
+        error.IsDir => try dir.deleteTree(io, filename),
+        else => return e,
+    };
 
     var response = Io.Writer.Allocating.init(alloc);
     defer response.deinit();
@@ -725,6 +759,10 @@ fn handleFileSize(w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []u8
     const parsed_json: ToolRequest = parsed_body.value;
 
     const filename = parsed_json.params.arguments.filename orelse return error.MissingFilename;
+
+    if (std.fs.path.isAbsolute(filename)) {
+        return error.AbsolutePathsNotAllowed;
+    }
 
     const f = try dir.openFile(io, filename, .{});
     defer f.close(io);
@@ -745,6 +783,10 @@ fn handleRead(w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []u8) !v
     const parsed_json: ToolRequest = parsed_body.value;
 
     const filename = parsed_json.params.arguments.filename orelse return error.MissingFilename;
+
+    if (std.fs.path.isAbsolute(filename)) {
+        return error.AbsolutePathsNotAllowed;
+    }
 
     const f = try dir.openFile(io, filename, .{});
     defer f.close(io);
@@ -769,6 +811,10 @@ fn handleReadSlice(w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []u
     const parsed_json: ToolRequest = parsed_body.value;
 
     const filename = parsed_json.params.arguments.filename orelse return error.MissingFilename;
+
+    if (std.fs.path.isAbsolute(filename)) {
+        return error.AbsolutePathsNotAllowed;
+    }
 
     const start = parsed_json.params.arguments.start;
     const length = parsed_json.params.arguments.length;
@@ -857,7 +903,7 @@ fn handleListFiles(w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []u
     while (try walker.next(io)) |entry| {
         //Dont even give it a fucking chance
         if (std.mem.eql(u8, entry.basename, ".git")) continue;
-        try response.writer.print("{s}\n", .{entry.basename});
+        try response.writer.print("{s} -> {s}\n", .{ @tagName(entry.kind), entry.basename });
     }
 
     if (response.written().len == 0) {
@@ -910,10 +956,12 @@ fn handleCommand(cmd: []const []const u8, w: *Writer, alloc: Allocator, io: Io, 
 }
 
 fn runCommand(alloc: Allocator, io: Io, dir: *Io.Dir, w: *Io.Writer, argv: []const []const u8) !void {
-    _ = dir;
+    const path = try dir.realPathFileAlloc(io, ".", alloc);
+    defer alloc.free(path);
+
     const result = try std.process.run(alloc, io, .{
         .argv = argv,
-        .cwd = .{ .path = "storage" },
+        .cwd = .{ .path = path },
     });
     defer alloc.free(result.stderr);
     defer alloc.free(result.stdout);
