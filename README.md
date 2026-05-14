@@ -1,2 +1,2 @@
 # MCP Server written in Zig
-Hello World bare skeleton for a MCP server written in Zig, plan is to give file operations and other shenanigans 
+Actually does a fair bit now, a bunch of tools, read source code for tools available
