@@ -253,7 +253,7 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
             .tools = &[_]ToolEntry{
                 ToolEntry{
                     .name = "arithmetic",
-                    .description = "Performs arithmetic (add, subtract, multiply, divide, sqrt)",
+                    .description = "Performs basic math. Use operation 'add', 'subtract', 'multiply', 'divide', or 'sqrt'. Provide 'a' and 'b' for two-number operations.",
                     .title = "Arithmetic",
                     .inputSchema = .{
                         .type = "object",
@@ -267,7 +267,7 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
                 },
                 ToolEntry{
                     .name = "file_write",
-                    .description = "Creates a file and writes content to it",
+                    .description = "Creates a new file or completely replaces an existing file with the given content.",
                     .title = "File Write",
                     .inputSchema = .{
                         .type = "object",
@@ -280,7 +280,7 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
                 },
                 ToolEntry{
                     .name = "file_append",
-                    .description = "Opens a file and appends content to the end",
+                    .description = "Opens a file and adds the content to the very end without removing anything.",
                     .title = "File Append",
                     .inputSchema = .{
                         .type = "object",
@@ -293,7 +293,7 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
                 },
                 ToolEntry{
                     .name = "file_overwrite",
-                    .description = "Opens a file and overwrites text at start",
+                    .description = "Overwrites text inside a file starting at a specific position.",
                     .title = "File Insert",
                     .inputSchema = .{
                         .type = "object",
@@ -307,7 +307,7 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
                 },
                 ToolEntry{
                     .name = "file_read",
-                    .description = "Opens the file and reads all of it",
+                    .description = "Reads and returns the entire content of a file.",
                     .title = "File Read",
                     .inputSchema = .{
                         .type = "object",
@@ -319,7 +319,7 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
                 },
                 ToolEntry{
                     .name = "file_read_slice",
-                    .description = "Opens a file, returns the slice between start and end",
+                    .description = "Reads only part of a file between two positions (start and end).",
                     .title = "File Read",
                     .inputSchema = .{
                         .type = "object",
@@ -333,7 +333,7 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
                 },
                 ToolEntry{
                     .name = "file_list",
-                    .description = "Returns a list of all available files",
+                    .description = "Returns a list of all files in the current directory.",
                     .title = "File List",
                     .inputSchema = .{
                         .type = "object",
@@ -343,7 +343,7 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
                 },
                 ToolEntry{
                     .name = "file_size",
-                    .description = "Returns the size of a file",
+                    .description = "Returns the size of a file in bytes.",
                     .title = "File Size",
                     .inputSchema = .{
                         .type = "object",
@@ -355,7 +355,7 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
                 },
                 ToolEntry{
                     .name = "file_delete",
-                    .description = "Delete a file or a directory",
+                    .description = "Deletes a file or a directory.",
                     .title = "File Delete",
                     .inputSchema = .{
                         .type = "object",
@@ -367,7 +367,7 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
                 },
                 ToolEntry{
                     .name = "change_directory",
-                    .description = "Change current directory",
+                    .description = "Changes the current working directory to the given folder.",
                     .title = "Change Directory",
                     .inputSchema = .{
                         .type = "object",
@@ -379,7 +379,7 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
                 },
                 ToolEntry{
                     .name = "current_directory",
-                    .description = "See current directory",
+                    .description = "Returns the full path of the current working directory.",
                     .title = "Current Directory",
                     .inputSchema = .{
                         .type = "object",
@@ -389,7 +389,7 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
                 },
                 ToolEntry{
                     .name = "home_directory",
-                    .description = "Return to the home directory",
+                    .description = "Changes to and returns the user's home directory.",
                     .title = "Root Directory",
                     .inputSchema = .{
                         .type = "object",
@@ -399,7 +399,7 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
                 },
                 ToolEntry{
                     .name = "remember",
-                    .description = "Put something into memory, using a keyword and content",
+                    .description = "Stores content in memory using a keyword so it can be recalled later.",
                     .title = "Remember",
                     .inputSchema = .{
                         .type = "object",
@@ -416,7 +416,7 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
                 },
                 ToolEntry{
                     .name = "recall",
-                    .description = "recall something from memory, using a keyword",
+                    .description = "Retrieves content from memory using a keyword.",
                     .title = "Recall",
                     .inputSchema = .{
                         .type = "object",
@@ -428,7 +428,7 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
                 },
                 ToolEntry{
                     .name = "date_time",
-                    .description = "Returns the date and time",
+                    .description = "Returns the current date and time.",
                     .title = "Date and Time",
                     .inputSchema = .{
                         .type = "object",
@@ -438,7 +438,7 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
                 },
                 ToolEntry{
                     .name = "web_request",
-                    .description = "Given a URL, returns the body of the request",
+                    .description = "Fetches the content from any URL and returns the response body.",
                     .title = "Web Request",
                     .inputSchema = .{
                         .required = &.{"url"},
@@ -449,7 +449,7 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
                 },
                 ToolEntry{
                     .name = "gcc",
-                    .description = "GNU C Compiler, returns output",
+                    .description = "Runs the GNU C Compiler (gcc) with the given command-line arguments.",
                     .title = "C Compiler",
                     .inputSchema = .{
                         .required = &.{"arguments"},
@@ -460,7 +460,7 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
                 },
                 ToolEntry{
                     .name = "make",
-                    .description = "GNU Make utility to build projects",
+                    .description = "Runs GNU Make to build projects using the given arguments.",
                     .title = "Make",
                     .inputSchema = .{
                         .required = &.{"arguments"},
@@ -471,7 +471,7 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
                 },
                 ToolEntry{
                     .name = "man",
-                    .description = "man command for reading system reference manuals",
+                    .description = "Shows the manual page for a command or topic.",
                     .title = "Manual Pages",
                     .inputSchema = .{
                         .required = &.{"arguments"},
@@ -482,7 +482,7 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
                 },
                 ToolEntry{
                     .name = "openscad",
-                    .description = "OpenSCAD is software for creating solid 3D CAD objects",
+                    .description = "Runs OpenSCAD to create or render 3D models from .scad files.",
                     .title = "OpenSCAD",
                     .inputSchema = .{
                         .required = &.{"arguments"},
@@ -493,7 +493,7 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
                 },
                 ToolEntry{
                     .name = "valgrind",
-                    .description = "a programming tool for memory debugging, memory leak detection, and profiling.",
+                    .description = "Runs Valgrind for memory debugging, leak detection, or profiling.",
                     .title = "Valgrind",
                     .inputSchema = .{
                         .required = &.{"arguments"},
@@ -504,8 +504,8 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
                 },
                 ToolEntry{
                     .name = "grep",
-                    .description = "greps the file",
-                    .title = "File Search",
+                    .description = "Searches for text inside files using grep with the given arguments.",
+                    .title = "File Search (grep)",
                     .inputSchema = .{
                         .required = &.{"arguments"},
                         .properties = .{
@@ -515,7 +515,7 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
                 },
                 ToolEntry{
                     .name = "git",
-                    .description = "version control system",
+                    .description = "Runs git version control commands with the given arguments.",
                     .title = "Git",
                     .inputSchema = .{
                         .required = &.{"arguments"},
