@@ -72,6 +72,10 @@ const ToolRequest = @import("tool_request.zig");
 const ContentType = @import("content_type.zig");
 const ToolResult = @import("tool_result.zig");
 const ProtocolError = @import("protocol_error.zig");
+const PromptReq = @import("prompt_req.zig");
+const PromptRes = @import("prompt_res.zig");
+const Message = @import("message.zig");
+const Models = @import("models_res.zig");
 
 const address = IpAddress.parse(Config.hostname, Config.port) catch |e| {
     @compileError("Unable to resolve IP Address: " ++ e);
@@ -240,12 +244,15 @@ fn handleConnectionImpl(alloc: Allocator, s: net.Stream, io: Io, dir: *Io.Dir, s
 
     var req = try http_server.receiveHead();
 
-    var it = req.iterateHeaders();
-    var len: usize = 0;
-    while (it.next()) |header| if (std.mem.eql(u8, "Content-Length", header.name)) {
-        len = try std.fmt.parseInt(usize, header.value, 10);
+    const origin = blk: {
+        var head_it = req.iterateHeaders();
+        while (head_it.next()) |header| if (std.mem.eql(u8, "Origin", header.name)) {
+            break :blk header.value;
+        };
+        break :blk null;
     };
 
+    const len = req.head.content_length orelse 0;
     if (len == 0) {
         try req.respond("", .{ .extra_headers = EXTRA_HEADERS, .status = .no_content });
         return;
@@ -265,7 +272,8 @@ fn handleConnectionImpl(alloc: Allocator, s: net.Stream, io: Io, dir: *Io.Dir, s
     methodJson.deinit();
 
     try s.socket.address.format(stdout);
-    try stdout.print(" -> REQUEST: {s} -> ", .{body});
+    try stdout.print(" -> REQUEST: {s}\n", .{ body });
+    try stdout.flush();
     switch (hash_method) {
         hash("initialize") => try handleInitialize(
             &res_writer.writer,
@@ -287,6 +295,7 @@ fn handleConnectionImpl(alloc: Allocator, s: net.Stream, io: Io, dir: *Io.Dir, s
             io,
             body,
             table,
+            origin,
         ),
         else => {
             try req.respond(
@@ -606,6 +615,23 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
                         },
                     },
                 },
+                ToolEntry{
+                    .name = "ask_other_llm",
+                    .description =
+                    \\This tool sends your prompt to another LLM and returns the answer it gives back.
+                    \\Use this when you want help from a different AI model.
+                    \\It does not answer the question itself — it asks another AI and brings the answer to you.
+                    ,
+                    .title = "Ask Other LLM",
+                    .inputSchema = .{
+                        .required = &.{"prompt"},
+                        .properties = .{
+                            .prompt = .{},
+                            .temperature = .{},
+                            .max_tokens = .{},
+                        },
+                    },
+                },
             },
         },
     };
@@ -614,7 +640,7 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
     try res_json_struct_fmt.format(w);
 }
 
-fn handleCallTools(w: *Writer, alloc: Allocator, dir: *Io.Dir, io: Io, body: []u8, table: *Table) !void {
+fn handleCallTools(w: *Writer, alloc: Allocator, dir: *Io.Dir, io: Io, body: []u8, table: *Table, origin: ?[]const u8) !void {
     const methodJson = try json.parseFromSlice(ToolNameReq, alloc, body, JSON_PARSE_OPTS);
     const hash_method = hash(methodJson.value.params.name);
     methodJson.deinit();
@@ -645,11 +671,138 @@ fn handleCallTools(w: *Writer, alloc: Allocator, dir: *Io.Dir, io: Io, body: []u
         hash("home_directory") => handleDirectory(.ROOT, w, alloc, io, dir, body),
         hash("remember") => handleMemory(.REMEMBER, w, alloc, body, table),
         hash("recall") => handleMemory(.RECALL, w, alloc, body, table),
+        hash("ask_other_llm") => handlePromptOther(w, alloc, io, body, origin),
         else => handleErrorResponse(w, error.NoSuchMethod, id, alloc),
     };
     res catch |e| {
         try handleErrorResponse(w, e, id, alloc);
     };
+}
+
+fn requestLoadedModel(w: *Writer, alloc: Allocator, io: Io, origin: []const u8) !void {
+    var client = std.http.Client{
+        .allocator = alloc,
+        .io = io,
+    };
+    defer client.deinit();
+
+    const url = try std.mem.concat(alloc, u8, &.{
+        origin,
+        "/v1/models",
+    });
+    defer alloc.free(url);
+
+    var response = Io.Writer.Allocating.init(alloc);
+    defer response.deinit();
+
+    const res = try client.fetch(
+        .{
+            .location = .{
+                .url = url,
+            },
+            .method = .GET,
+            .response_writer = &response.writer,
+        },
+    );
+    _ = res;
+
+    const parsed = try json.parseFromSlice(Models, alloc, response.written(), JSON_PARSE_OPTS);
+    defer parsed.deinit();
+
+    const models: Models = parsed.value;
+    for (models.data) |model| {
+        if (std.mem.eql(u8, model.status.value, "loaded") ) {
+            try w.writeAll(model.id);
+            return;
+        }
+    }
+    return error.NoModelsLoaded;
+
+}
+
+fn handlePromptOther(w: *Writer, alloc: Allocator, io: Io, body: []u8, origin: ?[]const u8) !void {
+    const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, JSON_PARSE_OPTS);
+    defer parsed_body.deinit();
+
+    const parsed_json: ToolRequest = parsed_body.value;
+
+    const llm_server = origin orelse return error.NoOriginInHeader;
+    const prompt = parsed_json.params.arguments.prompt orelse return error.MissingPrompt;
+    const temp = parsed_json.params.arguments.temperature orelse 0.7;
+    const max_tokens = parsed_json.params.arguments.max_tokens orelse 512;
+
+    const url = try std.mem.concat(alloc, u8, &.{
+        llm_server,
+        "/v1/chat/completions",
+    });
+    defer alloc.free(url);
+
+    var model = Io.Writer.Allocating.init(alloc);
+    defer model.deinit();
+
+    try requestLoadedModel(&model.writer, alloc, io, llm_server);
+    std.debug.print("{s}\n", .{model.written()});
+
+    const req_json = PromptReq{
+        .messages = &[_]Message{.{
+            .role = "user",
+            .content = prompt,
+        }},
+        .max_tokens = max_tokens,
+        .temperature = temp,
+        .model = model.written(),
+    };
+
+    var req_stringify = Io.Writer.Allocating.init(alloc);
+    defer req_stringify.deinit();
+
+    var req_json_formatter = json.fmt(req_json, STRINGIFY_OPTIONS);
+    try req_json_formatter.format(&req_stringify.writer);
+
+    var client = std.http.Client{
+        .allocator = alloc,
+        .io = io,
+    };
+    defer client.deinit();
+
+    var req = try client.request(.POST, try .parse(url), .{});
+    defer req.deinit();
+
+    req.extra_headers = JSON_HEADER;
+
+    try req.sendBodyComplete(req_stringify.written());
+
+    const redir_buf = try alloc.alloc(u8, 1024);
+    defer alloc.free(redir_buf);
+    var res = try req.receiveHead(redir_buf);
+
+    const tx_buf = try alloc.alloc(u8, 1024);
+    defer alloc.free(tx_buf);
+    const res_reader = res.reader(tx_buf);
+
+    var prompt_response = Io.Writer.Allocating.init(alloc);
+    defer prompt_response.deinit();
+
+    _ = try res_reader.stream(&prompt_response.writer, .unlimited);
+
+    const parsed_llm_response = try json.parseFromSlice(PromptRes, alloc, prompt_response.written(), JSON_PARSE_OPTS);
+    defer parsed_llm_response.deinit();
+
+    var client_response = Io.Writer.Allocating.init(alloc);
+    defer client_response.deinit();
+
+    const llm_response: PromptRes = parsed_llm_response.value;
+    if (llm_response.choices) |choices| for (choices) |choice| {
+        if (choice.message) |msg| {
+            try client_response.writer.writeAll(msg.content);
+        }
+    };
+
+    if (client_response.written().len == 0) {
+        try client_response.writer.writeAll(prompt_response.written());
+    }
+
+    try handleTextResponse(parsed_body.value.id, client_response.written(), w);
 }
 
 const MEM_OP = enum {

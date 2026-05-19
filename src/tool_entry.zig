@@ -60,5 +60,19 @@ inputSchema: struct {
             } = .{},
             description: []const u8 = "List of string values to pass as command arguments",
         } = null,
+        prompt: ?struct {
+            type: []const u8 = "string",
+            description: []const u8 = "The complete prompt or question to send to the other LLM. Include all necessary context, instructions, and desired output format.",
+        } = null,
+        temperature: ?struct {
+            type: []const u8 = "number",
+            description: []const u8 = "Optional. Controls randomness/creativity. 0.0 = deterministic, 1.0 = balanced, >1.0 = more creative. Usually defaults to ~0.7.",
+            minimum: i32 = 0,
+            maximum: i32 = 2
+        } = null,
+        max_tokens: ?struct {
+            type: []const u8 = "integer",
+            description: []const u8 = "Optional. Maximum number of tokens the other LLM is allowed to generate.",
+        } = null,
     },
 },
