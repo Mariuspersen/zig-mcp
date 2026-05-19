@@ -77,9 +77,15 @@ const address = IpAddress.parse(Config.hostname, Config.port) catch |e| {
     @compileError("Unable to resolve IP Address: " ++ e);
 };
 
-pub fn main(init: std.process.Init) !void {
-    const alloc = init.gpa;
-    const io = init.io;
+pub fn main() !void {
+    const alloc = std.heap.smp_allocator;
+    var threaded = Io.Threaded.init(
+        alloc,
+        .{},
+    );
+    defer threaded.deinit();
+
+    const io = threaded.io();
 
     var dir = try rootDir(io);
     defer dir.close(io);
@@ -103,41 +109,122 @@ pub fn main(init: std.process.Init) !void {
     try stdout.print("{s} version {s}\n", .{ @tagName(Config.name), Config.version });
     try stdout.flush();
 
-    var server = try address.listen(io, .{ .reuse_address = true });
-
     try stdout.print("Listening on {s}:{d}\n", .{ Config.hostname, Config.port });
     try stdout.flush();
 
-    defer server.deinit(io);
-    while (server.accept(io)) |s| {
-        handleConnection(
-            alloc,
-            s,
-            io,
-            &dir,
-            init.environ_map,
-            stdout,
-            &table,
-        ) catch |e| errorWriter(e);
-    } else |e| errorWriter(e);
+    var serverListen = try io.concurrent(handleListen, .{ io, alloc, &dir, stdout, &table });
+    var quitListen = try io.concurrent(listenStdin, .{ io, &serverListen });
+    quitListen.await(io) catch |e| switch (e) {
+        Io.Cancelable.Canceled => {
+            try stdout.print("Shutting down\n", .{});
+            try stdout.flush();
+        },
+    };
+}
+
+fn listenStdin(io: Io, future: *Io.Future(error{Canceled}!void)) Io.Cancelable!void {
+    listenStdinImpl(io, future) catch |e| switch (e) {
+        Io.Cancelable.Canceled => return Io.Cancelable.Canceled,
+        else => {
+            errorWriter(io, e);
+            return Io.Cancelable.Canceled;
+        },
+    };
+}
+
+fn listenStdinImpl(io: Io, future: *Io.Future(error{Canceled}!void)) !void {
+    var f = Io.File.stdin();
+    var term = try std.posix.tcgetattr(f.handle);
+    term.lflag.ICANON = false;
+    term.lflag.ECHO = false;
+    try std.posix.tcsetattr(f.handle, .NOW, term);
+
+    defer {
+        term.lflag.ICANON = true;
+        term.lflag.ECHO = true;
+        std.posix.tcsetattr(f.handle, .NOW, term) catch {};
+    }
+
+    var buf: [1]u8 = undefined;
+    var f_reader = f.reader(io, &buf);
+    const stdin = &f_reader.interface;
+    while (Io.checkCancel(io)) {
+        const input = try stdin.takeByte();
+        if (input == 27 or input == 'q') {
+            try future.cancel(io);
+            return;
+        }
+    } else |e| return e;
 }
 
 fn rootDir(io: Io) !Io.Dir {
-    return try Io.Dir.cwd().createDirPathOpen(io, Config.storage_directory, .{ .open_options = DIR_OPTIONS });
+    return try Io.Dir.cwd().createDirPathOpen(
+        io,
+        Config.storage_directory,
+        .{ .open_options = DIR_OPTIONS },
+    );
 }
 
 fn changeDir(dir: *Io.Dir, io: Io, new_dir: []const u8) !Io.Dir {
-    return try dir.createDirPathOpen(io, new_dir, .{ .open_options = DIR_OPTIONS });
+    return try dir.createDirPathOpen(
+        io,
+        new_dir,
+        .{ .open_options = DIR_OPTIONS },
+    );
 }
 
-fn errorWriter(e: anyerror) void {
-    const io = std.Options.debug_io;
+fn errorWriter(io: Io, e: anyerror) void {
     var buf: [64]u8 = undefined;
     var locked_stderr = io.lockStderr(&buf, null) catch return;
-    locked_stderr.file_writer.interface.print("ERROR: {s}", .{@errorName(e)}) catch return;
+    locked_stderr.file_writer.interface.print("ERROR: {s}\n", .{@errorName(e)}) catch return;
+}
+fn handleListen(io: Io, alloc: Allocator, dir: *Io.Dir, stdout: *Io.Writer, table: *Table) Io.Cancelable!void {
+    handleListenImpl(
+        io,
+        alloc,
+        dir,
+        stdout,
+        table,
+    ) catch |e| switch (e) {
+        Io.Cancelable.Canceled => return Io.Cancelable.Canceled,
+        else => {
+            errorWriter(io, e);
+            return Io.Cancelable.Canceled;
+        },
+    };
+}
+fn handleListenImpl(io: Io, alloc: Allocator, dir: *Io.Dir, stdout: *Io.Writer, table: *Table) !void {
+    var server = try address.listen(io, .{ .reuse_address = true });
+    defer server.deinit(io);
+    while (io.checkCancel()) |_| {
+        var accept = try io.concurrent(net.Server.accept, .{
+            &server,
+            io,
+        });
+        const s = try accept.await(io);
+        _ = try io.concurrent(handleConnection, .{
+            alloc,
+            s,
+            io,
+            dir,
+            stdout,
+            table,
+        });
+    } else |e| errorWriter(io, e);
 }
 
-fn handleConnection(alloc: Allocator, s: net.Stream, io: Io, dir: *Io.Dir, map: *const std.process.Environ.Map, stdout: *Io.Writer, table: *Table) !void {
+fn handleConnection(alloc: Allocator, s: net.Stream, io: Io, dir: *Io.Dir, stdout: *Io.Writer, table: *Table) void {
+    handleConnectionImpl(
+        alloc,
+        s,
+        io,
+        dir,
+        stdout,
+        table,
+    ) catch |e| errorWriter(io, e);
+}
+
+fn handleConnectionImpl(alloc: Allocator, s: net.Stream, io: Io, dir: *Io.Dir, stdout: *Io.Writer, table: *Table) !void {
     defer s.close(io);
     const read_buf = try alloc.alloc(u8, 1024);
     defer alloc.free(read_buf);
@@ -198,7 +285,6 @@ fn handleConnection(alloc: Allocator, s: net.Stream, io: Io, dir: *Io.Dir, map: 
             alloc,
             dir,
             io,
-            map,
             body,
             table,
         ),
@@ -528,8 +614,7 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
     try res_json_struct_fmt.format(w);
 }
 
-fn handleCallTools(w: *Writer, alloc: Allocator, dir: *Io.Dir, io: Io, map: *const std.process.Environ.Map, body: []u8, table: *Table) !void {
-    _ = map;
+fn handleCallTools(w: *Writer, alloc: Allocator, dir: *Io.Dir, io: Io, body: []u8, table: *Table) !void {
     const methodJson = try json.parseFromSlice(ToolNameReq, alloc, body, JSON_PARSE_OPTS);
     const hash_method = hash(methodJson.value.params.name);
     methodJson.deinit();
