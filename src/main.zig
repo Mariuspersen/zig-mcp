@@ -81,12 +81,15 @@ const address = IpAddress.parse(Config.hostname, Config.port) catch |e| {
     @compileError("Unable to resolve IP Address: " ++ e);
 };
 
-pub fn main() !void {
+pub fn main(init: std.process.Init.Minimal) !void {
     const alloc = std.heap.smp_allocator;
     var threaded = Io.Threaded.init(
         alloc,
-        .{},
+        .{
+            .environ = init.environ,
+        },
     );
+    var map = try threaded.environ.process_environ.createMap(alloc);
     defer threaded.deinit();
 
     const io = threaded.io();
@@ -116,7 +119,14 @@ pub fn main() !void {
     try stdout.print("Listening on {s}:{d}\n", .{ Config.hostname, Config.port });
     try stdout.flush();
 
-    var serverListen = try io.concurrent(handleListen, .{ io, alloc, &dir, stdout, &table });
+    var serverListen = try io.concurrent(handleListen, .{
+        io,
+        alloc,
+        &dir,
+        stdout,
+        &table,
+        &map,
+    });
     var quitListen = try io.concurrent(listenStdin, .{ io, &serverListen });
     quitListen.await(io) catch |e| switch (e) {
         Io.Cancelable.Canceled => {
@@ -182,13 +192,21 @@ fn errorWriter(io: Io, e: anyerror) void {
     var locked_stderr = io.lockStderr(&buf, null) catch return;
     locked_stderr.file_writer.interface.print("ERROR: {s}\n", .{@errorName(e)}) catch return;
 }
-fn handleListen(io: Io, alloc: Allocator, dir: *Io.Dir, stdout: *Io.Writer, table: *Table) Io.Cancelable!void {
+fn handleListen(
+    io: Io,
+    alloc: Allocator,
+    dir: *Io.Dir,
+    stdout: *Io.Writer,
+    table: *Table,
+    map: *std.process.Environ.Map,
+) Io.Cancelable!void {
     handleListenImpl(
         io,
         alloc,
         dir,
         stdout,
         table,
+        map,
     ) catch |e| switch (e) {
         Io.Cancelable.Canceled => return Io.Cancelable.Canceled,
         else => {
@@ -197,7 +215,14 @@ fn handleListen(io: Io, alloc: Allocator, dir: *Io.Dir, stdout: *Io.Writer, tabl
         },
     };
 }
-fn handleListenImpl(io: Io, alloc: Allocator, dir: *Io.Dir, stdout: *Io.Writer, table: *Table) !void {
+fn handleListenImpl(
+    io: Io,
+    alloc: Allocator,
+    dir: *Io.Dir,
+    stdout: *Io.Writer,
+    table: *Table,
+    map: *std.process.Environ.Map,
+) !void {
     var server = try address.listen(io, .{ .reuse_address = true });
     defer server.deinit(io);
     while (io.checkCancel()) |_| {
@@ -213,11 +238,20 @@ fn handleListenImpl(io: Io, alloc: Allocator, dir: *Io.Dir, stdout: *Io.Writer, 
             dir,
             stdout,
             table,
+            map,
         });
     } else |e| errorWriter(io, e);
 }
 
-fn handleConnection(alloc: Allocator, s: net.Stream, io: Io, dir: *Io.Dir, stdout: *Io.Writer, table: *Table) void {
+fn handleConnection(
+    alloc: Allocator,
+    s: net.Stream,
+    io: Io,
+    dir: *Io.Dir,
+    stdout: *Io.Writer,
+    table: *Table,
+    map: *std.process.Environ.Map,
+) void {
     handleConnectionImpl(
         alloc,
         s,
@@ -225,10 +259,19 @@ fn handleConnection(alloc: Allocator, s: net.Stream, io: Io, dir: *Io.Dir, stdou
         dir,
         stdout,
         table,
+        map,
     ) catch |e| errorWriter(io, e);
 }
 
-fn handleConnectionImpl(alloc: Allocator, s: net.Stream, io: Io, dir: *Io.Dir, stdout: *Io.Writer, table: *Table) !void {
+fn handleConnectionImpl(
+    alloc: Allocator,
+    s: net.Stream,
+    io: Io,
+    dir: *Io.Dir,
+    stdout: *Io.Writer,
+    table: *Table,
+    map: *std.process.Environ.Map,
+) !void {
     defer s.close(io);
     const read_buf = try alloc.alloc(u8, 1024);
     defer alloc.free(read_buf);
@@ -272,7 +315,7 @@ fn handleConnectionImpl(alloc: Allocator, s: net.Stream, io: Io, dir: *Io.Dir, s
     methodJson.deinit();
 
     try s.socket.address.format(stdout);
-    try stdout.print(" -> REQUEST: {s}\n", .{ body });
+    try stdout.print(" -> REQUEST: {s}\n", .{body});
     try stdout.flush();
     switch (hash_method) {
         hash("initialize") => try handleInitialize(
@@ -296,6 +339,7 @@ fn handleConnectionImpl(alloc: Allocator, s: net.Stream, io: Io, dir: *Io.Dir, s
             body,
             table,
             origin,
+            map,
         ),
         else => {
             try req.respond(
@@ -640,7 +684,16 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
     try res_json_struct_fmt.format(w);
 }
 
-fn handleCallTools(w: *Writer, alloc: Allocator, dir: *Io.Dir, io: Io, body: []u8, table: *Table, origin: ?[]const u8) !void {
+fn handleCallTools(
+    w: *Writer,
+    alloc: Allocator,
+    dir: *Io.Dir,
+    io: Io,
+    body: []u8,
+    table: *Table,
+    origin: ?[]const u8,
+    map: *std.process.Environ.Map,
+) !void {
     const methodJson = try json.parseFromSlice(ToolNameReq, alloc, body, JSON_PARSE_OPTS);
     const hash_method = hash(methodJson.value.params.name);
     methodJson.deinit();
@@ -659,13 +712,13 @@ fn handleCallTools(w: *Writer, alloc: Allocator, dir: *Io.Dir, io: Io, body: []u
         hash("file_delete") => handleFileDelete(w, alloc, io, dir, body),
         hash("date_time") => handleDateTime(w, alloc, io, body),
         hash("web_request") => handleWebRequest(w, alloc, io, body),
-        hash("gcc") => handleCommand(&.{"gcc"}, w, alloc, io, dir, body),
-        hash("make") => handleCommand(&.{"make"}, w, alloc, io, dir, body),
-        hash("man") => handleCommand(&.{"man"}, w, alloc, io, dir, body),
-        hash("valgrind") => handleCommand(&.{"valgrind"}, w, alloc, io, dir, body),
-        hash("grep") => handleCommand(&.{"grep"}, w, alloc, io, dir, body),
-        hash("git") => handleCommand(&.{"git"}, w, alloc, io, dir, body),
-        hash("openscad") => handleCommand(&.{"openscad"}, w, alloc, io, dir, body),
+        hash("gcc") => handleCommand(&.{"gcc"}, w, alloc, io, dir, body, map),
+        hash("make") => handleCommand(&.{"make"}, w, alloc, io, dir, body, map),
+        hash("man") => handleCommand(&.{"man"}, w, alloc, io, dir, body, map),
+        hash("valgrind") => handleCommand(&.{"valgrind"}, w, alloc, io, dir, body, map),
+        hash("grep") => handleCommand(&.{"grep"}, w, alloc, io, dir, body, map),
+        hash("git") => handleCommand(&.{"git"}, w, alloc, io, dir, body, map),
+        hash("openscad") => handleCommand(&.{"openscad"}, w, alloc, io, dir, body, map),
         hash("change_directory") => handleDirectory(.CHANGE, w, alloc, io, dir, body),
         hash("current_directory") => handleDirectory(.CURRENT, w, alloc, io, dir, body),
         hash("home_directory") => handleDirectory(.ROOT, w, alloc, io, dir, body),
@@ -711,13 +764,12 @@ fn requestLoadedModel(w: *Writer, alloc: Allocator, io: Io, origin: []const u8) 
 
     const models: Models = parsed.value;
     for (models.data) |model| {
-        if (std.mem.eql(u8, model.status.value, "loaded") ) {
+        if (std.mem.eql(u8, model.status.value, "loaded")) {
             try w.writeAll(model.id);
             return;
         }
     }
     return error.NoModelsLoaded;
-
 }
 
 fn handlePromptOther(w: *Writer, alloc: Allocator, io: Io, body: []u8, origin: ?[]const u8) !void {
@@ -729,7 +781,7 @@ fn handlePromptOther(w: *Writer, alloc: Allocator, io: Io, body: []u8, origin: ?
     const llm_server = origin orelse return error.NoOriginInHeader;
     const prompt = parsed_json.params.arguments.prompt orelse return error.MissingPrompt;
     const temp = parsed_json.params.arguments.temperature orelse 0.7;
-    const max_tokens = parsed_json.params.arguments.max_tokens orelse 512;
+    const max_tokens = parsed_json.params.arguments.max_tokens orelse 512 * 4;
 
     const url = try std.mem.concat(alloc, u8, &.{
         llm_server,
@@ -741,7 +793,6 @@ fn handlePromptOther(w: *Writer, alloc: Allocator, io: Io, body: []u8, origin: ?
     defer model.deinit();
 
     try requestLoadedModel(&model.writer, alloc, io, llm_server);
-    std.debug.print("{s}\n", .{model.written()});
 
     const req_json = PromptReq{
         .messages = &[_]Message{.{
@@ -1235,7 +1286,15 @@ fn handleErrorResponse(w: *Writer, e: anyerror, id: usize, alloc: Allocator) !vo
     try res_json_struct_fmt.format(w);
 }
 
-fn handleCommand(cmd: []const []const u8, w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []u8) !void {
+fn handleCommand(
+    cmd: []const []const u8,
+    w: *Writer,
+    alloc: Allocator,
+    io: Io,
+    dir: *Io.Dir,
+    body: []u8,
+    map: *std.process.Environ.Map,
+) !void {
     const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, JSON_PARSE_OPTS);
     defer parsed_body.deinit();
 
@@ -1252,17 +1311,25 @@ fn handleCommand(cmd: []const []const u8, w: *Writer, alloc: Allocator, io: Io, 
     });
     defer alloc.free(concat_args);
 
-    try runCommand(alloc, io, dir, &response.writer, concat_args);
+    try runCommand(alloc, io, dir, &response.writer, concat_args, map);
     try handleTextResponse(parsed_body.value.id, response.written(), w);
 }
 
-fn runCommand(alloc: Allocator, io: Io, dir: *Io.Dir, w: *Io.Writer, argv: []const []const u8) !void {
+fn runCommand(
+    alloc: Allocator,
+    io: Io,
+    dir: *Io.Dir,
+    w: *Io.Writer,
+    argv: []const []const u8,
+    map: *std.process.Environ.Map,
+) !void {
     const path = try dir.realPathFileAlloc(io, ".", alloc);
     defer alloc.free(path);
 
     const result = try std.process.run(alloc, io, .{
         .argv = argv,
         .cwd = .{ .path = path },
+        .environ_map = map,
     });
     defer alloc.free(result.stderr);
     defer alloc.free(result.stdout);
