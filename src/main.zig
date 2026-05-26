@@ -211,6 +211,7 @@ fn handleListen(
         Io.Cancelable.Canceled => return Io.Cancelable.Canceled,
         else => {
             errorWriter(io, e);
+            if (@errorReturnTrace()) |trace| std.debug.dumpErrorReturnTrace(trace);
             return Io.Cancelable.Canceled;
         },
     };
@@ -260,7 +261,10 @@ fn handleConnection(
         stdout,
         table,
         map,
-    ) catch |e| errorWriter(io, e);
+    ) catch |e| {
+        errorWriter(io, e);
+        if (@errorReturnTrace()) |trace| std.debug.dumpErrorReturnTrace(trace);
+    };
 }
 
 fn handleConnectionImpl(
@@ -314,6 +318,18 @@ fn handleConnectionImpl(
     const hash_method = hash(methodJson.value.method);
     methodJson.deinit();
 
+    var req_addr = Io.Writer.Allocating.init(alloc);
+    defer req_addr.deinit();
+
+    try s.socket.address.format(&req_addr.writer);
+    if (std.mem.find(u8, req_addr.written(), ":")) |idx| {
+        req_addr.writer.end = idx;
+    }
+    const orig = origin orelse unreachable;
+    if (std.mem.findLast(u8, orig, ":")) |idx| {
+        try req_addr.writer.writeAll(orig[idx..]);
+    }
+
     try s.socket.address.format(stdout);
     try stdout.print(" -> REQUEST: {s}\n", .{body});
     try stdout.flush();
@@ -338,7 +354,7 @@ fn handleConnectionImpl(
             io,
             body,
             table,
-            origin,
+            req_addr.written(),
             map,
         ),
         else => {
@@ -728,6 +744,7 @@ fn handleCallTools(
         else => handleErrorResponse(w, error.NoSuchMethod, id, alloc),
     };
     res catch |e| {
+        if (@errorReturnTrace()) |trace| std.debug.dumpErrorReturnTrace(trace);
         try handleErrorResponse(w, e, id, alloc);
     };
 }
@@ -740,6 +757,7 @@ fn requestLoadedModel(w: *Writer, alloc: Allocator, io: Io, origin: []const u8) 
     defer client.deinit();
 
     const url = try std.mem.concat(alloc, u8, &.{
+        "http://",
         origin,
         "/v1/models",
     });
@@ -759,7 +777,10 @@ fn requestLoadedModel(w: *Writer, alloc: Allocator, io: Io, origin: []const u8) 
     );
     _ = res;
 
-    const parsed = try json.parseFromSlice(Models, alloc, response.written(), JSON_PARSE_OPTS);
+    const parsed = json.parseFromSlice(Models, alloc, response.written(), JSON_PARSE_OPTS) catch |e| {
+        std.debug.print("{s}\n", .{response.written()});
+        return e;
+    };
     defer parsed.deinit();
 
     const models: Models = parsed.value;
@@ -779,11 +800,13 @@ fn handlePromptOther(w: *Writer, alloc: Allocator, io: Io, body: []u8, origin: ?
     const parsed_json: ToolRequest = parsed_body.value;
 
     const llm_server = origin orelse return error.NoOriginInHeader;
+    std.debug.print("{s}\n", .{llm_server});
     const prompt = parsed_json.params.arguments.prompt orelse return error.MissingPrompt;
     const temp = parsed_json.params.arguments.temperature orelse 0.7;
     const max_tokens = parsed_json.params.arguments.max_tokens orelse 512 * 4;
 
     const url = try std.mem.concat(alloc, u8, &.{
+        "http://",
         llm_server,
         "/v1/chat/completions",
     });

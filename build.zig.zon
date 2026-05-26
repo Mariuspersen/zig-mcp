@@ -1,6 +1,6 @@
 .{
     .name = .zig_mcp,
-    .version = "0.0.2",
+    .version = "0.0.3",
     .fingerprint = 0x1c29ab0b13b08f3e,
     .minimum_zig_version = "0.16.0",
     .PROTOCOL_VERSION = "2025-06-18",
