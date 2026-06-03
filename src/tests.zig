@@ -234,3 +234,37 @@ test "Check memory recalling" {
         "are very dumb and I am one, double and triple check everything I do, prompt the user if I'm doing it right\\nMake sure the user knows exactly what I'm doing, so I can be corrected early in the process.\\n\"" ++ "}]}}",
     );
 }
+
+test "HTML Text only" {
+    const alloc = std.testing.allocator;
+    const io = std.testing.io;
+
+    var client = std.http.Client{
+        .allocator = alloc,
+        .io = io,
+    };
+    defer client.deinit();
+
+    var response = Io.Writer.Allocating.init(alloc);
+    defer response.deinit();
+
+    const res = try client.fetch(
+        .{
+            .location = .{
+                .url = "https://news.ycombinator.com/",
+            },
+            .method = .GET,
+            .response_writer = &response.writer,
+        },
+    );
+    _ = res;
+    const HTMLParser = @import("html_parser.zig");
+
+    var reader = Io.Reader.fixed(response.written());
+    var writer = Io.Writer.Allocating.init(alloc);
+    defer writer.deinit();
+
+    try HTMLParser.getText(&reader, &writer.writer);
+    std.debug.print("TEXT: {s}\n", .{writer.written()});
+   
+}

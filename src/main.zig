@@ -76,6 +76,7 @@ const PromptReq = @import("prompt_req.zig");
 const PromptRes = @import("prompt_res.zig");
 const Message = @import("message.zig");
 const Models = @import("models_res.zig");
+const HTMLParser = @import("html_parser.zig");
 
 const address = IpAddress.parse(Config.hostname, Config.port) catch |e| {
     @compileError("Unable to resolve IP Address: " ++ e);
@@ -326,8 +327,12 @@ fn handleConnectionImpl(
         req_addr.writer.end = idx;
     }
     const orig = origin orelse unreachable;
+
     if (std.mem.findLast(u8, orig, ":")) |idx| {
-        try req_addr.writer.writeAll(orig[idx..]);
+        if (std.fmt.parseInt(u16, orig[idx..], 10)) |_| {
+            try req_addr.writer.writeAll(orig[idx..]);
+
+        } else |_| {}
     }
 
     try s.socket.address.format(stdout);
@@ -589,7 +594,7 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
                 },
                 ToolEntry{
                     .name = "web_request",
-                    .description = "Fetches the content from any URL and returns the response body.",
+                    .description = "Fetches the content from any URL and returns just the text.",
                     .title = "Web Request",
                     .inputSchema = .{
                         .required = &.{"url"},
@@ -1250,6 +1255,9 @@ fn handleWebRequest(w: *Writer, alloc: Allocator, io: Io, body: []u8) !void {
     };
     defer client.deinit();
 
+    var website = Io.Writer.Allocating.init(alloc);
+    defer website.deinit();
+
     var response = Io.Writer.Allocating.init(alloc);
     defer response.deinit();
 
@@ -1258,8 +1266,12 @@ fn handleWebRequest(w: *Writer, alloc: Allocator, io: Io, body: []u8) !void {
             .url = url,
         },
         .method = .GET,
-        .response_writer = &response.writer,
+        .response_writer = &website.writer,
     });
+
+    var website_reader = Io.Reader.fixed(website.written());
+    try HTMLParser.getText(&website_reader, &response.writer);
+
 
     try response.writer.print("\nSTATUS: {d} {s}", .{ @intFromEnum(res.status), @tagName(res.status) });
     try handleTextResponse(parsed_body.value.id, response.written(), w);
