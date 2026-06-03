@@ -331,7 +331,6 @@ fn handleConnectionImpl(
     if (std.mem.findLast(u8, orig, ":")) |idx| {
         if (std.fmt.parseInt(u16, orig[idx..], 10)) |_| {
             try req_addr.writer.writeAll(orig[idx..]);
-
         } else |_| {}
     }
 
@@ -881,7 +880,7 @@ fn handlePromptOther(w: *Writer, alloc: Allocator, io: Io, body: []u8, origin: ?
         try client_response.writer.writeAll(prompt_response.written());
     }
 
-    try handleTextResponse(parsed_body.value.id, client_response.written(), w);
+    try handleTextResponse(parsed_body.value.id, client_response.written(), alloc, w);
 }
 
 const MEM_OP = enum {
@@ -918,7 +917,7 @@ pub fn handleMemory(op: MEM_OP, w: *Writer, alloc: Allocator, body: []u8, table:
             try response.writer.writeAll(entry.items);
         },
     }
-    try handleTextResponse(parsed_body.value.id, response.written(), w);
+    try handleTextResponse(parsed_body.value.id, response.written(), alloc, w);
 }
 
 const DIR_OP = enum {
@@ -998,7 +997,7 @@ pub fn handleDirectory(op: DIR_OP, w: *Writer, alloc: Allocator, io: Io, dir: *I
         },
     }
 
-    try handleTextResponse(parsed_body.value.id, response.written(), w);
+    try handleTextResponse(parsed_body.value.id, response.written(), alloc, w);
 }
 
 fn handleArithmetic(w: *Writer, body: []u8, alloc: Allocator) !void {
@@ -1039,7 +1038,7 @@ fn handleArithmetic(w: *Writer, body: []u8, alloc: Allocator) !void {
         },
         else => return error.UnknownOperator,
     }
-    try handleTextResponse(parsed_json.id, response.written(), w);
+    try handleTextResponse(parsed_json.id, response.written(), alloc, w);
 }
 
 fn handleWrite(w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []u8) !void {
@@ -1066,7 +1065,7 @@ fn handleWrite(w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []u8) !
 
     try response.writer.print("{d} characters written to {s}", .{ content.len, filename });
 
-    try handleTextResponse(parsed_body.value.id, response.written(), w);
+    try handleTextResponse(parsed_body.value.id, response.written(), alloc, w);
 }
 
 fn handleInsert(w: *Writer, alloc: Allocator, io: Io, append: bool, dir: *Io.Dir, body: []u8) !void {
@@ -1098,7 +1097,7 @@ fn handleInsert(w: *Writer, alloc: Allocator, io: Io, append: bool, dir: *Io.Dir
 
     try response.writer.print("{d} characters written to {s} at index {d}", .{ content.len, filename, start });
 
-    try handleTextResponse(parsed_body.value.id, response.written(), w);
+    try handleTextResponse(parsed_body.value.id, response.written(), alloc, w);
 }
 
 fn handleFileDelete(w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []u8) !void {
@@ -1129,7 +1128,7 @@ fn handleFileDelete(w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []
 
     try response.writer.print("{s} deleted", .{filename});
 
-    try handleTextResponse(parsed_body.value.id, response.written(), w);
+    try handleTextResponse(parsed_body.value.id, response.written(), alloc, w);
 }
 
 fn handleFileSize(w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []u8) !void {
@@ -1153,7 +1152,7 @@ fn handleFileSize(w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []u8
 
     try response.writer.print("{d}", .{len});
 
-    try handleTextResponse(parsed_body.value.id, response.written(), w);
+    try handleTextResponse(parsed_body.value.id, response.written(), alloc, w);
 }
 
 fn handleRead(w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []u8) !void {
@@ -1181,7 +1180,7 @@ fn handleRead(w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []u8) !v
 
     _ = try reader.interface.stream(&response.writer, .unlimited);
 
-    try handleTextResponse(parsed_body.value.id, response.written(), w);
+    try handleTextResponse(parsed_body.value.id, response.written(), alloc, w);
 }
 
 fn handleReadSlice(w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []u8) !void {
@@ -1213,7 +1212,7 @@ fn handleReadSlice(w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []u
 
     _ = try reader.interface.stream(&response.writer, if (length) |len| .limited(len) else .unlimited);
 
-    try handleTextResponse(parsed_body.value.id, response.written(), w);
+    try handleTextResponse(parsed_body.value.id, response.written(), alloc, w);
 }
 
 fn handleDateTime(w: *Writer, alloc: Allocator, io: Io, body: []u8) !void {
@@ -1239,7 +1238,7 @@ fn handleDateTime(w: *Writer, alloc: Allocator, io: Io, body: []u8) !void {
         ds.getMinutesIntoHour(),
         ds.getSecondsIntoMinute(),
     });
-    try handleTextResponse(parsed_body.value.id, response.written(), w);
+    try handleTextResponse(parsed_body.value.id, response.written(), alloc, w);
 }
 
 fn handleWebRequest(w: *Writer, alloc: Allocator, io: Io, body: []u8) !void {
@@ -1272,9 +1271,13 @@ fn handleWebRequest(w: *Writer, alloc: Allocator, io: Io, body: []u8) !void {
     var website_reader = Io.Reader.fixed(website.written());
     try HTMLParser.getText(&website_reader, &response.writer);
 
+    if (response.written().len == 0) {
+        website_reader.seek = 0;
+        _ = try website_reader.stream(&response.writer, .unlimited);
+    }
 
     try response.writer.print("\nSTATUS: {d} {s}", .{ @intFromEnum(res.status), @tagName(res.status) });
-    try handleTextResponse(parsed_body.value.id, response.written(), w);
+    try handleTextResponse(parsed_body.value.id, response.written(), alloc, w);
 }
 
 fn handleListFiles(w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []u8) !void {
@@ -1296,7 +1299,7 @@ fn handleListFiles(w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []u
     if (response.written().len == 0) {
         try response.writer.print("{{}}", .{});
     }
-    try handleTextResponse(parsed_body.value.id, response.written(), w);
+    try handleTextResponse(parsed_body.value.id, response.written(), alloc, w);
 }
 
 fn handleErrorResponse(w: *Writer, e: anyerror, id: usize, alloc: Allocator) !void {
@@ -1347,7 +1350,7 @@ fn handleCommand(
     defer alloc.free(concat_args);
 
     try runCommand(alloc, io, dir, &response.writer, concat_args, map);
-    try handleTextResponse(parsed_body.value.id, response.written(), w);
+    try handleTextResponse(parsed_body.value.id, response.written(), alloc, w);
 }
 
 fn runCommand(
@@ -1377,14 +1380,23 @@ fn runCommand(
     }
 }
 
-fn handleTextResponse(id: usize, text: []u8, w: *Io.Writer) !void {
+fn handleTextResponse(id: usize, text: []u8, alloc: Allocator, w: *Io.Writer) !void {
+    const valid = std.unicode.utf8ValidateSlice(text);
+    var fixed = Io.Writer.Allocating.init(alloc);
+    defer fixed.deinit();
+
+    if (!valid) {
+        var alt = std.unicode.fmtUtf8(text);
+        try alt.format(&fixed.writer);
+    }
+
     const json_res = ToolResult{
         .id = id,
         .result = .{
             .content = &[_]ContentType{
                 .{
                     .type = "text",
-                    .text = text,
+                    .text = if (valid) text else fixed.written(),
                 },
             },
         },

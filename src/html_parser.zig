@@ -18,6 +18,7 @@ pub fn getText(input: *Io.Reader, output: *Io.Writer) !void {
                 }
             }
         }
+        try output.writeByte('\n');
         _ = input.streamDelimiter(output, '<') catch break;
     }
 }
