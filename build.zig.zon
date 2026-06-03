@@ -6,6 +6,7 @@
     .PROTOCOL_VERSION = "2025-06-18",
     .JSONRPC = "2.0",
     .hostname = "0.0.0.0",
+    .searxng_hostname = null,
     .port = 8000,
     .storage_directory = "storage",
     .dependencies = .{},

@@ -6,6 +6,7 @@ const Io = std.Io;
 const net = Io.net;
 const time = std.time;
 const epoch = time.epoch;
+const Map = std.process.Environ.Map;
 
 const Writer = Io.Writer;
 const Allocator = std.mem.Allocator;
@@ -77,6 +78,7 @@ const PromptRes = @import("prompt_res.zig");
 const Message = @import("message.zig");
 const Models = @import("models_res.zig");
 const HTMLParser = @import("html_parser.zig");
+const SearchQuery = @import("search_query.zig");
 
 const address = IpAddress.parse(Config.hostname, Config.port) catch |e| {
     @compileError("Unable to resolve IP Address: " ++ e);
@@ -603,6 +605,15 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
                     },
                 },
                 ToolEntry{
+                    .name = "web_search",
+                    .description = "Search the internet given a search query",
+                    .title = "Web Request",
+                    .inputSchema = .{
+                        .required = &.{"query"},
+                        .properties = .{ .query = .{} },
+                    },
+                },
+                ToolEntry{
                     .name = "gcc",
                     .description = "Runs the GNU C Compiler (gcc) with the given command-line arguments.",
                     .title = "C Compiler",
@@ -732,6 +743,7 @@ fn handleCallTools(
         hash("file_delete") => handleFileDelete(w, alloc, io, dir, body),
         hash("date_time") => handleDateTime(w, alloc, io, body),
         hash("web_request") => handleWebRequest(w, alloc, io, body),
+        hash("web_search") => handleWebSearch(w, alloc, io, body),
         hash("gcc") => handleCommand(&.{"gcc"}, w, alloc, io, dir, body, map),
         hash("make") => handleCommand(&.{"make"}, w, alloc, io, dir, body, map),
         hash("man") => handleCommand(&.{"man"}, w, alloc, io, dir, body, map),
@@ -1280,6 +1292,130 @@ fn handleWebRequest(w: *Writer, alloc: Allocator, io: Io, body: []u8) !void {
     try handleTextResponse(parsed_body.value.id, response.written(), alloc, w);
 }
 
+const SEARXNG_ENABLED = blk: {
+    const T = @TypeOf(Config.searxng_hostname);
+    const info = @typeInfo(T);
+
+    switch (info) {
+        .pointer => |p| {
+            const child_info = @typeInfo(p.child);
+            switch (child_info) {
+                .array => |arr| {
+                    if (arr.child == u8) break :blk true;
+                },
+                else => {},
+            }
+        },
+        else => {},
+    }
+    break :blk false;
+};
+
+fn handleWebSearch(w: *Writer, alloc: Allocator, io: Io, body: []u8) !void {
+    const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, JSON_PARSE_OPTS);
+    defer parsed_body.deinit();
+
+    const parsed_json: ToolRequest = parsed_body.value;
+
+    var response = Io.Writer.Allocating.init(alloc);
+    defer response.deinit();
+
+    if (!SEARXNG_ENABLED) {
+        try response.writer.writeAll("Searching is not enabled on the MCP Server, tell the user he must enable it first");
+        try handleTextResponse(parsed_body.value.id, response.written(), alloc, w);
+        return;
+    }
+
+    const query_raw = parsed_json.params.arguments.query orelse return error.NoQueryProvided;
+
+    var query = Io.Writer.Allocating.init(alloc);
+    defer query.deinit();
+
+    for (query_raw) |char| {
+        try switch (char) {
+            ' ' => query.writer.writeAll("%20"),
+            '"' => query.writer.writeAll("%34"),
+            '/' => query.writer.writeAll("%47"),
+            else => query.writer.writeByte(char),
+        };
+    }
+
+    const url = try std.mem.concat(alloc, u8, &.{
+        Config.searxng_hostname,
+        "/search?q=",
+        query.written(),
+        "&format=json",
+    });
+    defer alloc.free(url);
+
+    var client = std.http.Client{
+        .allocator = alloc,
+        .io = io,
+    };
+    defer client.deinit();
+
+    var query_response = Io.Writer.Allocating.init(alloc);
+    defer query_response.deinit();
+
+    const res = try client.fetch(.{
+        .location = .{
+            .url = url,
+        },
+        .method = .GET,
+        .response_writer = &query_response.writer,
+    });
+
+    const query_result = json.parseFromSlice(
+        SearchQuery,
+        alloc,
+        query_response.written(),
+        JSON_PARSE_OPTS,
+    ) catch |e| {
+        std.debug.print("{s}\n", .{query_response.written()});
+        return e;
+    };
+    defer query_result.deinit();
+
+    const parsed_query: SearchQuery = query_result.value;
+
+    if (parsed_query.results.len > 0) {
+        try response.writer.writeAll("Results:\n");
+    }
+    for (parsed_query.results) |result| {
+        try response.writer.print("{s}\n{s}\n{s}\n\n", .{ result.title, result.url, result.content });
+    }
+    if (parsed_query.answers.len > 0) {
+        try response.writer.writeAll("Answers:\n");
+    }
+    for (parsed_query.answers) |answer| {
+        try response.writer.print("{s}\nURL: {s}\n\n", .{ answer.answer, answer.url });
+    }
+    if (parsed_query.infoboxes.len > 0) {
+        try response.writer.writeAll("Info Boxes:\n");
+    }
+    for (parsed_query.infoboxes) |infobox| {
+        try response.writer.print("{s}\n{s}\n{s}\n", .{ infobox.infobox, infobox.id, infobox.content });
+        if (infobox.attributes.len > 0) {
+            try response.writer.writeAll("Attributes:\n");
+        }
+        for (infobox.attributes) |attribute| {
+            try response.writer.print("{s}\n{s}\n", .{ attribute.label, attribute.value });
+        }
+        if (infobox.urls.len > 0) {
+            try response.writer.writeAll("URL's:\n");
+        }
+        for (infobox.urls) |info_url| {
+            try response.writer.print("{s}\n{s}\n", .{ info_url.title, info_url.url });
+            if (info_url.official) |is_official| {
+                try response.writer.print("Official: {any}\n", .{is_official});
+            }
+        }
+    }
+
+    try response.writer.print("\nSTATUS: {d} {s}", .{ @intFromEnum(res.status), @tagName(res.status) });
+    try handleTextResponse(parsed_body.value.id, response.written(), alloc, w);
+}
+
 fn handleListFiles(w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []u8) !void {
     const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, JSON_PARSE_OPTS);
     defer parsed_body.deinit();
@@ -1324,15 +1460,7 @@ fn handleErrorResponse(w: *Writer, e: anyerror, id: usize, alloc: Allocator) !vo
     try res_json_struct_fmt.format(w);
 }
 
-fn handleCommand(
-    cmd: []const []const u8,
-    w: *Writer,
-    alloc: Allocator,
-    io: Io,
-    dir: *Io.Dir,
-    body: []u8,
-    map: *std.process.Environ.Map,
-) !void {
+fn handleCommand(cmd: []const []const u8, w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []u8, map: *Map) !void {
     const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, JSON_PARSE_OPTS);
     defer parsed_body.deinit();
 
@@ -1353,14 +1481,7 @@ fn handleCommand(
     try handleTextResponse(parsed_body.value.id, response.written(), alloc, w);
 }
 
-fn runCommand(
-    alloc: Allocator,
-    io: Io,
-    dir: *Io.Dir,
-    w: *Io.Writer,
-    argv: []const []const u8,
-    map: *std.process.Environ.Map,
-) !void {
+fn runCommand(alloc: Allocator, io: Io, dir: *Io.Dir, w: *Io.Writer, argv: []const []const u8, map: *Map) !void {
     const path = try dir.realPathFileAlloc(io, ".", alloc);
     defer alloc.free(path);
 

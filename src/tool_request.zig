@@ -19,6 +19,7 @@ params: struct {
         prompt: ?[]const u8 = null,
         temperature: ?f64 = null,
         max_tokens: ?u32 = null,
+        query: ?[]const u8 = null,
     },
 },
 jsonrpc: []const u8 = JSONRPC,

@@ -64,6 +64,10 @@ inputSchema: struct {
             type: []const u8 = "string",
             description: []const u8 = "The complete prompt or question to send to the other LLM. Include all necessary context, instructions, and desired output format.",
         } = null,
+        query: ?struct {
+            type: []const u8 = "string",
+            description: []const u8 = "What to search for",
+        } = null,
         temperature: ?struct {
             type: []const u8 = "number",
             description: []const u8 = "Optional. Controls randomness/creativity. 0.0 = deterministic, 1.0 = balanced, >1.0 = more creative. Usually defaults to ~0.7.",
