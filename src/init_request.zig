@@ -5,9 +5,9 @@ method: []const u8,
 params: struct {
     protocolVersion: []const u8 = PROTOCOL_VERSION,
     capabilities: struct {
-        tools: struct {
+        tools: ?struct {
             listChanged: bool,
-        },
+        } = null,
     },
     clientInfo: struct {
         name: []const u8,

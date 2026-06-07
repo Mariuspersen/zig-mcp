@@ -64,8 +64,10 @@ pub const JSON_HEADER: []const http.Header = &.{
 
 const TOOL_LIST = blk: {
     var list: [Tools.TOOL_COUNT]ToolEntry = undefined;
-    for (&list, Tools.all_tools) |*entry, tool| {
-        entry.* = ToolEntry{
+    var i: usize = 0;
+    for (Tools.all_tools) |tool| {
+        if (!tool.enabled) continue;
+        list[i] = ToolEntry{
             .name = tool.name,
             .title = tool.name,
             .description = tool.description,
@@ -74,14 +76,17 @@ const TOOL_LIST = blk: {
                 .properties = tool.properties,
             },
         };
+        i += 1;
     }
     break :blk list;
 };
 
 const TOOL_LIST_V1 = blk: {
     var list: [Tools.TOOL_COUNT]ToolEntryV1 = undefined;
-    for (&list, Tools.all_tools) |*entry, tool| {
-        entry.* = ToolEntryV1{
+    var i: usize = 0;
+    for (Tools.all_tools) |tool| {
+        if (!tool.enabled) continue;
+        list[i] = ToolEntryV1{
             .function = .{
                 .name = tool.name,
                 .description = tool.description,
@@ -91,6 +96,7 @@ const TOOL_LIST_V1 = blk: {
                 },
             },
         };
+        i += 1;
     }
     break :blk list;
 };
@@ -333,7 +339,7 @@ fn handleConnectionImpl(alloc: Allocator, s: net.Stream, io: Io, dir: *Io.Dir, s
     if (std.mem.find(u8, req_addr.written(), ":")) |idx| {
         req_addr.writer.end = idx;
     }
-    const orig = origin orelse unreachable;
+    const orig = origin orelse "localhost";
 
     if (std.mem.findLast(u8, orig, ":")) |idx| {
         if (std.fmt.parseInt(u16, orig[idx..], 10)) |_| {

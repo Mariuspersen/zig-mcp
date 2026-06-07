@@ -1,3 +1,5 @@
+const Config = @import("config");
+
 pub const Operation = struct {
     type: []const u8 = "string",
     description: []const u8 = "Math operation. Must be exactly one of: add, subtract, multiply, divide, sqrt",
@@ -85,6 +87,7 @@ pub const Tool = struct {
     description: []const u8,
     required: []const []const u8,
     properties: PropertySet,
+    enabled: bool,
 };
 
 pub const all_tools = [_]Tool{
@@ -97,6 +100,7 @@ pub const all_tools = [_]Tool{
             .a = .{},
             .b = .{},
         },
+        .enabled = Config.enable_tool.math,
     },
     .{
         .name = "file_write",
@@ -106,6 +110,7 @@ pub const all_tools = [_]Tool{
             .filename = .{},
             .content = .{},
         },
+        .enabled = Config.enable_tool.file_operations,
     },
     .{
         .name = "file_append",
@@ -115,6 +120,7 @@ pub const all_tools = [_]Tool{
             .filename = .{},
             .content = .{},
         },
+        .enabled = Config.enable_tool.file_operations,
     },
     .{
         .name = "file_overwrite",
@@ -125,12 +131,16 @@ pub const all_tools = [_]Tool{
             .content = .{},
             .start = .{},
         },
+        .enabled = Config.enable_tool.file_operations,
     },
     .{
         .name = "file_read",
         .description = "Reads and returns the entire content of a file.",
         .required = &.{"filename"},
-        .properties = .{ .filename = .{} },
+        .properties = .{
+            .filename = .{},
+        },
+        .enabled = Config.enable_tool.file_operations,
     },
     .{
         .name = "file_read_slice",
@@ -141,12 +151,14 @@ pub const all_tools = [_]Tool{
             .start = .{},
             .end = .{},
         },
+        .enabled = Config.enable_tool.file_operations,
     },
     .{
         .name = "file_list",
         .description = "Returns a list of all files in the current directory.",
         .required = &.{},
         .properties = .{},
+        .enabled = Config.enable_tool.file_operations,
     },
     .{
         .name = "file_size",
@@ -155,6 +167,7 @@ pub const all_tools = [_]Tool{
         .properties = .{
             .filename = .{},
         },
+        .enabled = Config.enable_tool.file_operations,
     },
     .{
         .name = "file_delete",
@@ -164,6 +177,7 @@ pub const all_tools = [_]Tool{
             .filename = .{},
             .directory_name = .{},
         },
+        .enabled = Config.enable_tool.file_operations,
     },
     .{
         .name = "change_directory",
@@ -172,24 +186,31 @@ pub const all_tools = [_]Tool{
         .properties = .{
             .directory_name = .{},
         },
+        .enabled = Config.enable_tool.file_operations,
     },
     .{
         .name = "current_directory",
         .description = "Returns the full path of the current working directory.",
         .required = &.{},
         .properties = .{},
+        .enabled = Config.enable_tool.file_operations,
     },
     .{
         .name = "home_directory",
         .description = "Changes to and returns the user's home directory.",
         .required = &.{},
         .properties = .{},
+        .enabled = Config.enable_tool.file_operations,
     },
     .{
         .name = "remember",
         .description = "Stores content in memory using a keyword so it can be recalled later.",
         .required = &.{},
-        .properties = .{ .keyword = .{}, .content = .{} },
+        .properties = .{
+            .keyword = .{},
+            .content = .{},
+        },
+        .enabled = Config.enable_tool.memory,
     },
     .{
         .name = "recall",
@@ -198,12 +219,14 @@ pub const all_tools = [_]Tool{
         .properties = .{
             .keyword = .{},
         },
+        .enabled = Config.enable_tool.memory,
     },
     .{
         .name = "date_time",
         .description = "Returns the current date and time.",
         .required = &.{},
         .properties = .{},
+        .enabled = Config.enable_tool.system,
     },
     .{
         .name = "web_request",
@@ -212,6 +235,7 @@ pub const all_tools = [_]Tool{
         .properties = .{
             .url = .{},
         },
+        .enabled = Config.enable_tool.web,
     },
     .{
         .name = "web_search",
@@ -220,6 +244,7 @@ pub const all_tools = [_]Tool{
         .properties = .{
             .query = .{},
         },
+        .enabled = Config.enable_tool.web,
     },
     .{
         .name = "gcc",
@@ -228,6 +253,7 @@ pub const all_tools = [_]Tool{
         .properties = .{
             .arguments = .{},
         },
+        .enabled = Config.enable_tool.cmd,
     },
     .{
         .name = "make",
@@ -236,6 +262,7 @@ pub const all_tools = [_]Tool{
         .properties = .{
             .arguments = .{},
         },
+        .enabled = Config.enable_tool.cmd,
     },
     .{
         .name = "man",
@@ -244,6 +271,7 @@ pub const all_tools = [_]Tool{
         .properties = .{
             .arguments = .{},
         },
+        .enabled = Config.enable_tool.cmd,
     },
     .{
         .name = "openscad",
@@ -252,6 +280,7 @@ pub const all_tools = [_]Tool{
         .properties = .{
             .arguments = .{},
         },
+        .enabled = Config.enable_tool.cmd,
     },
     .{
         .name = "valgrind",
@@ -260,6 +289,7 @@ pub const all_tools = [_]Tool{
         .properties = .{
             .arguments = .{},
         },
+        .enabled = Config.enable_tool.cmd,
     },
     .{
         .name = "grep",
@@ -268,6 +298,7 @@ pub const all_tools = [_]Tool{
         .properties = .{
             .arguments = .{},
         },
+        .enabled = Config.enable_tool.cmd,
     },
     .{
         .name = "git",
@@ -276,6 +307,7 @@ pub const all_tools = [_]Tool{
         .properties = .{
             .arguments = .{},
         },
+        .enabled = Config.enable_tool.cmd,
     },
     .{
         .name = "task",
@@ -289,7 +321,19 @@ pub const all_tools = [_]Tool{
             .temperature = .{},
             .max_tokens = .{},
         },
+        .enabled = Config.enable_tool.ai,
     },
 };
 
-pub const TOOL_COUNT = all_tools.len;
+pub const TOOL_COUNT = blk: {
+    var count: usize = 0;
+    for (all_tools) |tool| {
+        if (tool.enabled) count += 1;
+    }
+    break :blk count;
+};
+
+pub const ENABLED_TOOLS = blk: {
+    const list: [TOOL_COUNT]Tool = undefined;
+    break :blk list;
+};
