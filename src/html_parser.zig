@@ -12,7 +12,7 @@ pub fn getText(input: *Io.Reader, output: *Io.Writer) !void {
                 _ = input.discardDelimiterInclusive('<') catch break;
                 const end = input.takeDelimiterInclusive('>') catch break;
                 if (std.mem.startsWith(u8, end, "/script") or
-                    std.mem.startsWith(u8, tag, "style"))
+                    std.mem.startsWith(u8, end, "/style"))
                 {
                     break;
                 }

@@ -1116,13 +1116,19 @@ fn handleWebRequest(w: *Writer, alloc: Allocator, io: Io, body: []u8) !void {
     var website_reader = Io.Reader.fixed(website.written());
     try HTMLParser.getText(&website_reader, &response.writer);
 
-    if (response.written().len == 0) {
-        website_reader.seek = 0;
-        _ = try website_reader.stream(&response.writer, .unlimited);
+    const trimmed = std.mem.trim(u8, response.written(), " ");
+    var space_it = std.mem.splitAny(u8, trimmed, " \n");
+
+    var space = Io.Writer.Allocating.init(alloc);
+    defer space.deinit();
+
+    while (space_it.next()) |text| {
+        if (text.len == 0) continue;
+        try space.writer.print("{s} ",.{text});
     }
 
     try response.writer.print("\nSTATUS: {d} {s}", .{ @intFromEnum(res.status), @tagName(res.status) });
-    try handleTextResponse(parsed_body.value.id, response.written(), alloc, w);
+    try handleTextResponse(parsed_body.value.id, space.written(), alloc, w);
 }
 
 const SEARXNG_ENABLED = blk: {
