@@ -62,613 +62,37 @@ pub const JSON_HEADER: []const http.Header = &.{
     },
 };
 
-pub const TOOL_LIST = &[_]ToolEntry{
-    ToolEntry{
-        .name = "arithmetic",
-        .description = "Performs basic math. Use operation 'add', 'subtract', 'multiply', 'divide', or 'sqrt'. Provide 'a' and 'b' for two-number operations.",
-        .title = "Arithmetic",
-        .inputSchema = .{
-            .type = "object",
-            .required = &.{"operation"},
-            .properties = .{
-                .a = .{},
-                .b = .{},
-                .operation = .{},
+const TOOL_LIST = blk: {
+    var list: [Tools.TOOL_COUNT]ToolEntry = undefined;
+    for (&list, Tools.all_tools) |*entry, tool| {
+        entry.* = ToolEntry{
+            .name = tool.name,
+            .title = tool.name,
+            .description = tool.description,
+            .inputSchema = .{
+                .required = tool.required,
+                .properties = tool.properties,
             },
-        },
-    },
-    ToolEntry{
-        .name = "file_write",
-        .description = "Creates a new file or completely replaces an existing file with the given content.",
-        .title = "File Write",
-        .inputSchema = .{
-            .type = "object",
-            .required = &.{ "filename", "content" },
-            .properties = .{
-                .filename = .{},
-                .content = .{},
-            },
-        },
-    },
-    ToolEntry{
-        .name = "file_append",
-        .description = "Opens a file and adds the content to the very end without removing anything.",
-        .title = "File Append",
-        .inputSchema = .{
-            .type = "object",
-            .required = &.{ "filename", "content" },
-            .properties = .{
-                .filename = .{},
-                .content = .{},
-            },
-        },
-    },
-    ToolEntry{
-        .name = "file_overwrite",
-        .description = "Overwrites text inside a file starting at a specific position.",
-        .title = "File Insert",
-        .inputSchema = .{
-            .type = "object",
-            .required = &.{ "filename", "content", "start" },
-            .properties = .{
-                .filename = .{},
-                .content = .{},
-                .start = .{ .description = "Index of where to insert" },
-            },
-        },
-    },
-    ToolEntry{
-        .name = "file_read",
-        .description = "Reads and returns the entire content of a file.",
-        .title = "File Read",
-        .inputSchema = .{
-            .type = "object",
-            .required = &.{"filename"},
-            .properties = .{
-                .filename = .{},
-            },
-        },
-    },
-    ToolEntry{
-        .name = "file_read_slice",
-        .description = "Reads only part of a file between two positions (start and end).",
-        .title = "File Read",
-        .inputSchema = .{
-            .type = "object",
-            .required = &.{"filename"},
-            .properties = .{
-                .filename = .{},
-                .start = .{},
-                .end = .{},
-            },
-        },
-    },
-    ToolEntry{
-        .name = "file_list",
-        .description = "Returns a list of all files in the current directory.",
-        .title = "File List",
-        .inputSchema = .{
-            .type = "object",
-            .required = &.{},
-            .properties = .{},
-        },
-    },
-    ToolEntry{
-        .name = "file_size",
-        .description = "Returns the size of a file in bytes.",
-        .title = "File Size",
-        .inputSchema = .{
-            .type = "object",
-            .required = &.{},
-            .properties = .{
-                .filename = .{},
-            },
-        },
-    },
-    ToolEntry{
-        .name = "file_delete",
-        .description = "Deletes a file or a directory.",
-        .title = "File Delete",
-        .inputSchema = .{
-            .type = "object",
-            .required = &.{},
-            .properties = .{ .filename = .{}, .directory_name = .{} },
-        },
-    },
-    ToolEntry{
-        .name = "change_directory",
-        .description = "Changes the current working directory to the given folder. Creates the folder if it does not exist.",
-        .title = "Change Directory",
-        .inputSchema = .{
-            .type = "object",
-            .required = &.{"directory_name"},
-            .properties = .{
-                .directory_name = .{},
-            },
-        },
-    },
-    ToolEntry{
-        .name = "current_directory",
-        .description = "Returns the full path of the current working directory.",
-        .title = "Current Directory",
-        .inputSchema = .{
-            .type = "object",
-            .required = &.{},
-            .properties = .{},
-        },
-    },
-    ToolEntry{
-        .name = "home_directory",
-        .description = "Changes to and returns the user's home directory.",
-        .title = "Root Directory",
-        .inputSchema = .{
-            .type = "object",
-            .required = &.{},
-            .properties = .{},
-        },
-    },
-    ToolEntry{
-        .name = "remember",
-        .description = "Stores content in memory using a keyword so it can be recalled later.",
-        .title = "Remember",
-        .inputSchema = .{
-            .type = "object",
-            .required = &.{},
-            .properties = .{
-                .keyword = .{
-                    .description = "Keyword to remember by",
-                },
-                .content = .{
-                    .description = "Content to be put into memory",
-                },
-            },
-        },
-    },
-    ToolEntry{
-        .name = "recall",
-        .description = "Retrieves content from memory using a keyword.",
-        .title = "Recall",
-        .inputSchema = .{
-            .type = "object",
-            .required = &.{},
-            .properties = .{
-                .keyword = .{ .description = "Keyword to find in memory" },
-            },
-        },
-    },
-    ToolEntry{
-        .name = "date_time",
-        .description = "Returns the current date and time.",
-        .title = "Date and Time",
-        .inputSchema = .{
-            .type = "object",
-            .required = &.{},
-            .properties = .{},
-        },
-    },
-    ToolEntry{
-        .name = "web_request",
-        .description = "Fetches the content from any URL and returns just the text.",
-        .title = "Web Request",
-        .inputSchema = .{
-            .required = &.{"url"},
-            .properties = .{
-                .url = .{},
-            },
-        },
-    },
-    ToolEntry{
-        .name = "web_search",
-        .description = "Search the internet given a search query",
-        .title = "Web Request",
-        .inputSchema = .{
-            .required = &.{"query"},
-            .properties = .{ .query = .{} },
-        },
-    },
-    ToolEntry{
-        .name = "gcc",
-        .description = "Runs the GNU C Compiler (gcc) with the given command-line arguments.",
-        .title = "C Compiler",
-        .inputSchema = .{
-            .required = &.{"arguments"},
-            .properties = .{
-                .arguments = .{},
-            },
-        },
-    },
-    ToolEntry{
-        .name = "make",
-        .description = "Runs GNU Make to build projects using the given arguments.",
-        .title = "Make",
-        .inputSchema = .{
-            .required = &.{"arguments"},
-            .properties = .{
-                .arguments = .{},
-            },
-        },
-    },
-    ToolEntry{
-        .name = "man",
-        .description = "Shows the manual page for a command or topic.",
-        .title = "Manual Pages",
-        .inputSchema = .{
-            .required = &.{"arguments"},
-            .properties = .{
-                .arguments = .{},
-            },
-        },
-    },
-    ToolEntry{
-        .name = "openscad",
-        .description = "Runs OpenSCAD to create or render 3D models from .scad files.",
-        .title = "OpenSCAD",
-        .inputSchema = .{
-            .required = &.{"arguments"},
-            .properties = .{
-                .arguments = .{},
-            },
-        },
-    },
-    ToolEntry{
-        .name = "valgrind",
-        .description = "Runs Valgrind for memory debugging, leak detection, or profiling.",
-        .title = "Valgrind",
-        .inputSchema = .{
-            .required = &.{"arguments"},
-            .properties = .{
-                .arguments = .{},
-            },
-        },
-    },
-    ToolEntry{
-        .name = "grep",
-        .description = "Searches for text inside files using grep with the given arguments.",
-        .title = "File Search (grep)",
-        .inputSchema = .{
-            .required = &.{"arguments"},
-            .properties = .{
-                .arguments = .{},
-            },
-        },
-    },
-    ToolEntry{
-        .name = "git",
-        .description = "Runs git version control commands with the given arguments.",
-        .title = "Git",
-        .inputSchema = .{
-            .required = &.{"arguments"},
-            .properties = .{
-                .arguments = .{},
-            },
-        },
-    },
-    ToolEntry{
-        .name = "task",
-        .description =
-        \\Launch a subagent to handle complex, multistep tasks autonomously.
-        \\Use this for research, exploration, writing, or any work that spans multiple files or steps.
-        ,
-        .title = "Task",
-        .inputSchema = .{
-            .required = &.{"prompt"},
-            .properties = .{
-                .prompt = .{},
-                .temperature = .{},
-                .max_tokens = .{},
-            },
-        },
-    },
+        };
+    }
+    break :blk list;
 };
 
-pub const TOOL_LIST_V1 = &[_]ToolEntryV1{
-    ToolEntryV1{
-        .function = .{
-            .name = "arithmetic",
-            .description = "Performs basic math. Use operation 'add', 'subtract', 'multiply', 'divide', or 'sqrt'. Provide 'a' and 'b' for two-number operations.",
-            .parameters = .{
-                .properties = .{
-                    .operation = .{},
-                    .a = .{},
-                    .b = .{},
+const TOOL_LIST_V1 = blk: {
+    var list: [Tools.TOOL_COUNT]ToolEntryV1 = undefined;
+    for (&list, Tools.all_tools) |*entry, tool| {
+        entry.* = ToolEntryV1{
+            .function = .{
+                .name = tool.name,
+                .description = tool.description,
+                .parameters = .{
+                    .properties = tool.properties,
+                    .required = tool.required,
                 },
-                .required = &.{"operation"},
             },
-        },
-    },
-    ToolEntryV1{
-        .function = .{
-            .name = "file_write",
-            .description = "Creates a new file or completely replaces an existing file with the given content.",
-            .parameters = .{
-                .properties = .{
-                    .filename = .{},
-                    .content = .{},
-                },
-                .required = &.{ "filename", "content" },
-            },
-        },
-    },
-    ToolEntryV1{
-        .function = .{
-            .name = "file_append",
-            .description = "Opens a file and adds the content to the very end without removing anything.",
-            .parameters = .{
-                .properties = .{
-                    .filename = .{},
-                    .content = .{},
-                },
-                .required = &.{ "filename", "content" },
-            },
-        },
-    },
-    ToolEntryV1{
-        .function = .{
-            .name = "file_overwrite",
-            .description = "Overwrites text inside a file starting at a specific position.",
-            .parameters = .{
-                .properties = .{
-                    .filename = .{},
-                    .content = .{},
-                    .start = .{},
-                },
-                .required = &.{ "filename", "content", "start" },
-            },
-        },
-    },
-    ToolEntryV1{
-        .function = .{
-            .name = "file_read",
-            .description = "Reads and returns the entire content of a file.",
-            .parameters = .{
-                .properties = .{
-                    .filename = .{},
-                },
-                .required = &.{"filename"},
-            },
-        },
-    },
-    ToolEntryV1{
-        .function = .{
-            .name = "file_read_slice",
-            .description = "Reads only part of a file between two positions (start and end).",
-            .parameters = .{
-                .properties = .{
-                    .filename = .{},
-                    .start = .{},
-                    .end = .{},
-                },
-                .required = &.{"filename"},
-            },
-        },
-    },
-    ToolEntryV1{
-        .function = .{
-            .name = "file_list",
-            .description = "Returns a list of all files in the current directory.",
-            .parameters = .{
-                .properties = .{},
-                .required = &.{},
-            },
-        },
-    },
-    ToolEntryV1{
-        .function = .{
-            .name = "file_size",
-            .description = "Returns the size of a file in bytes.",
-            .parameters = .{
-                .properties = .{
-                    .filename = .{},
-                },
-                .required = &.{},
-            },
-        },
-    },
-    ToolEntryV1{
-        .function = .{
-            .name = "file_delete",
-            .description = "Deletes a file or a directory.",
-            .parameters = .{
-                .properties = .{
-                    .filename = .{},
-                    .directory_name = .{},
-                },
-                .required = &.{},
-            },
-        },
-    },
-    ToolEntryV1{
-        .function = .{
-            .name = "change_directory",
-            .description = "Changes the current working directory to the given folder. Creates the folder if it does not exist.",
-            .parameters = .{
-                .properties = .{
-                    .directory_name = .{},
-                },
-                .required = &.{"directory_name"},
-            },
-        },
-    },
-    ToolEntryV1{
-        .function = .{
-            .name = "current_directory",
-            .description = "Returns the full path of the current working directory.",
-            .parameters = .{
-                .properties = .{},
-                .required = &.{},
-            },
-        },
-    },
-    ToolEntryV1{
-        .function = .{
-            .name = "home_directory",
-            .description = "Changes to and returns the user's home directory.",
-            .parameters = .{
-                .properties = .{},
-                .required = &.{},
-            },
-        },
-    },
-    ToolEntryV1{
-        .function = .{
-            .name = "remember",
-            .description = "Stores content in memory using a keyword so it can be recalled later.",
-            .parameters = .{
-                .properties = .{
-                    .keyword = .{},
-                    .content = .{},
-                },
-                .required = &.{},
-            },
-        },
-    },
-    ToolEntryV1{
-        .function = .{
-            .name = "recall",
-            .description = "Retrieves content from memory using a keyword.",
-            .parameters = .{
-                .properties = .{
-                    .keyword = .{},
-                },
-                .required = &.{},
-            },
-        },
-    },
-    ToolEntryV1{
-        .function = .{
-            .name = "date_time",
-            .description = "Returns the current date and time.",
-            .parameters = .{
-                .properties = .{},
-                .required = &.{},
-            },
-        },
-    },
-    ToolEntryV1{
-        .function = .{
-            .name = "web_request",
-            .description = "Fetches the content from any URL and returns just the text.",
-            .parameters = .{
-                .properties = .{
-                    .url = .{},
-                },
-                .required = &.{"url"},
-            },
-        },
-    },
-    ToolEntryV1{
-        .function = .{
-            .name = "web_search",
-            .description = "Search the internet given a search query",
-            .parameters = .{
-                .properties = .{
-                    .query = .{},
-                },
-                .required = &.{"query"},
-            },
-        },
-    },
-    ToolEntryV1{
-        .function = .{
-            .name = "gcc",
-            .description = "Runs the GNU C Compiler (gcc) with the given command-line arguments.",
-            .parameters = .{
-                .properties = .{
-                    .arguments = .{},
-                },
-                .required = &.{"arguments"},
-            },
-        },
-    },
-    ToolEntryV1{
-        .function = .{
-            .name = "make",
-            .description = "Runs GNU Make to build projects using the given arguments.",
-            .parameters = .{
-                .properties = .{
-                    .arguments = .{},
-                },
-                .required = &.{"arguments"},
-            },
-        },
-    },
-    ToolEntryV1{
-        .function = .{
-            .name = "man",
-            .description = "Shows the manual page for a command or topic.",
-            .parameters = .{
-                .properties = .{
-                    .arguments = .{},
-                },
-                .required = &.{"arguments"},
-            },
-        },
-    },
-    ToolEntryV1{
-        .function = .{
-            .name = "openscad",
-            .description = "Runs OpenSCAD to create or render 3D models from .scad files.",
-            .parameters = .{
-                .properties = .{
-                    .arguments = .{},
-                },
-                .required = &.{"arguments"},
-            },
-        },
-    },
-    ToolEntryV1{
-        .function = .{
-            .name = "valgrind",
-            .description = "Runs Valgrind for memory debugging, leak detection, or profiling.",
-            .parameters = .{
-                .properties = .{
-                    .arguments = .{},
-                },
-                .required = &.{"arguments"},
-            },
-        },
-    },
-    ToolEntryV1{
-        .function = .{
-            .name = "grep",
-            .description = "Searches for text inside files using grep with the given arguments.",
-            .parameters = .{
-                .properties = .{
-                    .arguments = .{},
-                },
-                .required = &.{"arguments"},
-            },
-        },
-    },
-    ToolEntryV1{
-        .function = .{
-            .name = "git",
-            .description = "Runs git version control commands with the given arguments.",
-            .parameters = .{
-                .properties = .{
-                    .arguments = .{},
-                },
-                .required = &.{"arguments"},
-            },
-        },
-    },
-    ToolEntryV1{
-        .function = .{
-            .name = "task",
-            .description =
-            \\Launch a subagent to handle complex, multistep tasks autonomously.
-            \\Use this for research, exploration, writing, or any work that spans multiple files or steps.
-            ,
-            .parameters = .{
-                .properties = .{
-                    .prompt = .{},
-                    .temperature = .{},
-                    .max_tokens = .{},
-                },
-                .required = &.{"prompt"},
-            },
-        },
-    },
+        };
+    }
+    break :blk list;
 };
 
 const MethodJson = @import("method_only.zig");
@@ -691,6 +115,7 @@ const SearchQuery = @import("search_query.zig");
 const ToolEntryV1 = @import("tool_entry_v1.zig");
 const ToolCallV1 = @import("tool_call_v1.zig");
 const Arguments = @import("arguments.zig");
+const Tools = @import("tools.zig");
 
 const address = IpAddress.parse(Config.hostname, Config.port) catch |e| {
     @compileError("Unable to resolve IP Address: " ++ e);
@@ -989,7 +414,7 @@ fn handleListTools(w: *Writer, body: []u8, alloc: Allocator) !void {
     const res_json_struct = ToolResponse{
         .id = parsedBody.value.id,
         .result = .{
-            .tools = TOOL_LIST,
+            .tools = &TOOL_LIST,
         },
     };
 
@@ -1221,7 +646,7 @@ fn handlePromptOther(
     while (true) {
         const req_json = PromptReq{
             .messages = messages.items,
-            .tools = TOOL_LIST_V1,
+            .tools = &TOOL_LIST_V1,
             .max_tokens = max_tokens,
             .temperature = temp,
             .model = model.written(),
@@ -1289,7 +714,6 @@ fn handlePromptOther(
                         );
                     }
                 } else break;
-                
             }
         };
     }
