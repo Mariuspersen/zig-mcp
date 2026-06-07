@@ -75,7 +75,7 @@ The server exposes the following tools via the MCP `tools/list` and `tools/call`
 - **git** — Run git version control commands
 
 ### LLM Proxy
-- **ask_other_llm** — Forward a prompt to another LLM server (via the connecting client's origin header)
+ - **task** — Launch a subagent to handle complex, multistep tasks autonomously
 
 ## Protocol
 

@@ -344,13 +344,12 @@ pub const TOOL_LIST = &[_]ToolEntry{
         },
     },
     ToolEntry{
-        .name = "ask_other_llm",
+        .name = "task",
         .description =
-        \\This tool sends your prompt to another LLM and returns the answer it gives back.
-        \\Use this when you want help from a different AI model.
-        \\It does not answer the question itself — it asks another AI and brings the answer to you.
+        \\Launch a subagent to handle complex, multistep tasks autonomously.
+        \\Use this for research, exploration, writing, or any work that spans multiple files or steps.
         ,
-        .title = "Ask Other LLM",
+        .title = "Task",
         .inputSchema = .{
             .required = &.{"prompt"},
             .properties = .{
@@ -655,11 +654,10 @@ pub const TOOL_LIST_V1 = &[_]ToolEntryV1{
     },
     ToolEntryV1{
         .function = .{
-            .name = "ask_other_llm",
+            .name = "task",
             .description =
-            \\This tool sends your prompt to another LLM and returns the answer it gives back.
-            \\Use this when you want help from a different AI model.
-            \\It does not answer the question itself — it asks another AI and brings the answer to you.
+            \\Launch a subagent to handle complex, multistep tasks autonomously.
+            \\Use this for research, exploration, writing, or any work that spans multiple files or steps.
             ,
             .parameters = .{
                 .properties = .{
@@ -1031,7 +1029,7 @@ fn handleCallTools(w: *Writer, alloc: Allocator, dir: *Io.Dir, io: Io, body: []u
         hash("home_directory") => handleDirectory(.ROOT, w, alloc, io, dir, body),
         hash("remember") => handleMemory(.REMEMBER, w, alloc, body, table),
         hash("recall") => handleMemory(.RECALL, w, alloc, body, table),
-        hash("ask_other_llm") => handlePromptOther(w, alloc, dir, io, body, table, origin, map),
+        hash("task") => handlePromptOther(w, alloc, dir, io, body, table, origin, map),
         else => handleErrorResponse(w, error.NoSuchMethod, id, alloc),
     };
     res catch |e| {
