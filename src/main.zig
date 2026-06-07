@@ -649,7 +649,7 @@ fn handlePromptOther(
         .role = "user",
     });
 
-    while (true) {
+    for (0..Config.maximum_tool_iterations) |_| {
         const req_json = PromptReq{
             .messages = messages.items,
             .tools = &TOOL_LIST_V1,
@@ -836,6 +836,7 @@ pub fn handleDirectory(op: DIR_OP, w: *Writer, alloc: Allocator, io: Io, dir: *I
             }
         },
         .ROOT => {
+            dir.close(io);
             dir.* = try rootDir(io);
             try response.writer.print("Changed directory to ~", .{});
         },
@@ -1274,7 +1275,7 @@ fn handleListFiles(w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []u
     }
 
     if (response.written().len == 0) {
-        try response.writer.print("{{}}", .{});
+        try response.writer.print("No files in directory", .{});
     }
     try handleTextResponse(parsed_body.value.id, response.written(), alloc, w);
 }

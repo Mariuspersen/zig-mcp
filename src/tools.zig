@@ -332,8 +332,3 @@ pub const TOOL_COUNT = blk: {
     }
     break :blk count;
 };
-
-pub const ENABLED_TOOLS = blk: {
-    const list: [TOOL_COUNT]Tool = undefined;
-    break :blk list;
-};
