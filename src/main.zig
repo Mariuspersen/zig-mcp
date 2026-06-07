@@ -127,7 +127,18 @@ const address = IpAddress.parse(Config.hostname, Config.port) catch |e| {
     @compileError("Unable to resolve IP Address: " ++ e);
 };
 
+fn ignoreSigint(_: std.posix.SIG) callconv(.c) void {}
+
 pub fn main(init: std.process.Init.Minimal) !void {
+    const sa = std.posix.Sigaction{
+        .handler = .{
+            .handler = ignoreSigint,
+        },
+        .mask = std.posix.sigemptyset(),
+        .flags = std.posix.SA.RESTART,
+    };
+    std.posix.sigaction(std.posix.SIG.INT, &sa, null);
+
     const alloc = std.heap.smp_allocator;
     var threaded = Io.Threaded.init(
         alloc,
@@ -193,11 +204,19 @@ fn listenStdinImpl(io: Io, future: *Io.Future(error{Canceled}!void)) !void {
     var term = try std.posix.tcgetattr(f.handle);
     term.lflag.ICANON = false;
     term.lflag.ECHO = false;
+    term.lflag.IEXTEN = false;
+    term.lflag.ISIG = false;
+    term.iflag.ICRNL = false;
+    term.iflag.IXON = false;
     try std.posix.tcsetattr(f.handle, .NOW, term);
 
     defer {
         term.lflag.ICANON = true;
         term.lflag.ECHO = true;
+        term.lflag.IEXTEN = true;
+        term.lflag.ISIG = true;
+        term.iflag.ICRNL = true;
+        term.iflag.IXON = true;
         std.posix.tcsetattr(f.handle, .NOW, term) catch {};
     }
 
@@ -206,9 +225,12 @@ fn listenStdinImpl(io: Io, future: *Io.Future(error{Canceled}!void)) !void {
     const stdin = &f_reader.interface;
     while (Io.checkCancel(io)) {
         const input = try stdin.takeByte();
-        if (input == 27 or input == 'q') {
-            try future.cancel(io);
-            return;
+        switch (input) {
+            27, 'q', 3 => {
+                try future.cancel(io);
+                return;
+            },
+            else => {},
         }
     } else |e| return e;
 }
@@ -1124,7 +1146,7 @@ fn handleWebRequest(w: *Writer, alloc: Allocator, io: Io, body: []u8) !void {
 
     while (space_it.next()) |text| {
         if (text.len == 0) continue;
-        try space.writer.print("{s} ",.{text});
+        try space.writer.print("{s} ", .{text});
     }
 
     try response.writer.print("\nSTATUS: {d} {s}", .{ @intFromEnum(res.status), @tagName(res.status) });
