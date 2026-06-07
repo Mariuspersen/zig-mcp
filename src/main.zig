@@ -362,6 +362,317 @@ pub const TOOL_LIST = &[_]ToolEntry{
     },
 };
 
+pub const TOOL_LIST_V1 = &[_]ToolEntryV1{
+    ToolEntryV1{
+        .function = .{
+            .name = "arithmetic",
+            .description = "Performs basic math. Use operation 'add', 'subtract', 'multiply', 'divide', or 'sqrt'. Provide 'a' and 'b' for two-number operations.",
+            .parameters = .{
+                .properties = .{
+                    .operation = .{},
+                    .a = .{},
+                    .b = .{},
+                },
+                .required = &.{"operation"},
+            },
+        },
+    },
+    ToolEntryV1{
+        .function = .{
+            .name = "file_write",
+            .description = "Creates a new file or completely replaces an existing file with the given content.",
+            .parameters = .{
+                .properties = .{
+                    .filename = .{},
+                    .content = .{},
+                },
+                .required = &.{ "filename", "content" },
+            },
+        },
+    },
+    ToolEntryV1{
+        .function = .{
+            .name = "file_append",
+            .description = "Opens a file and adds the content to the very end without removing anything.",
+            .parameters = .{
+                .properties = .{
+                    .filename = .{},
+                    .content = .{},
+                },
+                .required = &.{ "filename", "content" },
+            },
+        },
+    },
+    ToolEntryV1{
+        .function = .{
+            .name = "file_overwrite",
+            .description = "Overwrites text inside a file starting at a specific position.",
+            .parameters = .{
+                .properties = .{
+                    .filename = .{},
+                    .content = .{},
+                    .start = .{},
+                },
+                .required = &.{ "filename", "content", "start" },
+            },
+        },
+    },
+    ToolEntryV1{
+        .function = .{
+            .name = "file_read",
+            .description = "Reads and returns the entire content of a file.",
+            .parameters = .{
+                .properties = .{
+                    .filename = .{},
+                },
+                .required = &.{"filename"},
+            },
+        },
+    },
+    ToolEntryV1{
+        .function = .{
+            .name = "file_read_slice",
+            .description = "Reads only part of a file between two positions (start and end).",
+            .parameters = .{
+                .properties = .{
+                    .filename = .{},
+                    .start = .{},
+                    .end = .{},
+                },
+                .required = &.{"filename"},
+            },
+        },
+    },
+    ToolEntryV1{
+        .function = .{
+            .name = "file_list",
+            .description = "Returns a list of all files in the current directory.",
+            .parameters = .{
+                .properties = .{},
+                .required = &.{},
+            },
+        },
+    },
+    ToolEntryV1{
+        .function = .{
+            .name = "file_size",
+            .description = "Returns the size of a file in bytes.",
+            .parameters = .{
+                .properties = .{
+                    .filename = .{},
+                },
+                .required = &.{},
+            },
+        },
+    },
+    ToolEntryV1{
+        .function = .{
+            .name = "file_delete",
+            .description = "Deletes a file or a directory.",
+            .parameters = .{
+                .properties = .{
+                    .filename = .{},
+                    .directory_name = .{},
+                },
+                .required = &.{},
+            },
+        },
+    },
+    ToolEntryV1{
+        .function = .{
+            .name = "change_directory",
+            .description = "Changes the current working directory to the given folder. Creates the folder if it does not exist.",
+            .parameters = .{
+                .properties = .{
+                    .directory_name = .{},
+                },
+                .required = &.{"directory_name"},
+            },
+        },
+    },
+    ToolEntryV1{
+        .function = .{
+            .name = "current_directory",
+            .description = "Returns the full path of the current working directory.",
+            .parameters = .{
+                .properties = .{},
+                .required = &.{},
+            },
+        },
+    },
+    ToolEntryV1{
+        .function = .{
+            .name = "home_directory",
+            .description = "Changes to and returns the user's home directory.",
+            .parameters = .{
+                .properties = .{},
+                .required = &.{},
+            },
+        },
+    },
+    ToolEntryV1{
+        .function = .{
+            .name = "remember",
+            .description = "Stores content in memory using a keyword so it can be recalled later.",
+            .parameters = .{
+                .properties = .{
+                    .keyword = .{},
+                    .content = .{},
+                },
+                .required = &.{},
+            },
+        },
+    },
+    ToolEntryV1{
+        .function = .{
+            .name = "recall",
+            .description = "Retrieves content from memory using a keyword.",
+            .parameters = .{
+                .properties = .{
+                    .keyword = .{},
+                },
+                .required = &.{},
+            },
+        },
+    },
+    ToolEntryV1{
+        .function = .{
+            .name = "date_time",
+            .description = "Returns the current date and time.",
+            .parameters = .{
+                .properties = .{},
+                .required = &.{},
+            },
+        },
+    },
+    ToolEntryV1{
+        .function = .{
+            .name = "web_request",
+            .description = "Fetches the content from any URL and returns just the text.",
+            .parameters = .{
+                .properties = .{
+                    .url = .{},
+                },
+                .required = &.{"url"},
+            },
+        },
+    },
+    ToolEntryV1{
+        .function = .{
+            .name = "web_search",
+            .description = "Search the internet given a search query",
+            .parameters = .{
+                .properties = .{
+                    .query = .{},
+                },
+                .required = &.{"query"},
+            },
+        },
+    },
+    ToolEntryV1{
+        .function = .{
+            .name = "gcc",
+            .description = "Runs the GNU C Compiler (gcc) with the given command-line arguments.",
+            .parameters = .{
+                .properties = .{
+                    .arguments = .{},
+                },
+                .required = &.{"arguments"},
+            },
+        },
+    },
+    ToolEntryV1{
+        .function = .{
+            .name = "make",
+            .description = "Runs GNU Make to build projects using the given arguments.",
+            .parameters = .{
+                .properties = .{
+                    .arguments = .{},
+                },
+                .required = &.{"arguments"},
+            },
+        },
+    },
+    ToolEntryV1{
+        .function = .{
+            .name = "man",
+            .description = "Shows the manual page for a command or topic.",
+            .parameters = .{
+                .properties = .{
+                    .arguments = .{},
+                },
+                .required = &.{"arguments"},
+            },
+        },
+    },
+    ToolEntryV1{
+        .function = .{
+            .name = "openscad",
+            .description = "Runs OpenSCAD to create or render 3D models from .scad files.",
+            .parameters = .{
+                .properties = .{
+                    .arguments = .{},
+                },
+                .required = &.{"arguments"},
+            },
+        },
+    },
+    ToolEntryV1{
+        .function = .{
+            .name = "valgrind",
+            .description = "Runs Valgrind for memory debugging, leak detection, or profiling.",
+            .parameters = .{
+                .properties = .{
+                    .arguments = .{},
+                },
+                .required = &.{"arguments"},
+            },
+        },
+    },
+    ToolEntryV1{
+        .function = .{
+            .name = "grep",
+            .description = "Searches for text inside files using grep with the given arguments.",
+            .parameters = .{
+                .properties = .{
+                    .arguments = .{},
+                },
+                .required = &.{"arguments"},
+            },
+        },
+    },
+    ToolEntryV1{
+        .function = .{
+            .name = "git",
+            .description = "Runs git version control commands with the given arguments.",
+            .parameters = .{
+                .properties = .{
+                    .arguments = .{},
+                },
+                .required = &.{"arguments"},
+            },
+        },
+    },
+    ToolEntryV1{
+        .function = .{
+            .name = "ask_other_llm",
+            .description =
+            \\This tool sends your prompt to another LLM and returns the answer it gives back.
+            \\Use this when you want help from a different AI model.
+            \\It does not answer the question itself — it asks another AI and brings the answer to you.
+            ,
+            .parameters = .{
+                .properties = .{
+                    .prompt = .{},
+                    .temperature = .{},
+                    .max_tokens = .{},
+                },
+                .required = &.{"prompt"},
+            },
+        },
+    },
+};
+
 const MethodJson = @import("method_only.zig");
 const ToolNameReq = @import("tool_name_req.zig");
 const InitResponse = @import("init_response.zig");
@@ -380,6 +691,8 @@ const Models = @import("models_res.zig");
 const HTMLParser = @import("html_parser.zig");
 const SearchQuery = @import("search_query.zig");
 const ToolEntryV1 = @import("tool_entry_v1.zig");
+const ToolCallV1 = @import("tool_call_v1.zig");
+const Arguments = @import("arguments.zig");
 
 const address = IpAddress.parse(Config.hostname, Config.port) catch |e| {
     @compileError("Unable to resolve IP Address: " ++ e);
@@ -718,13 +1031,89 @@ fn handleCallTools(w: *Writer, alloc: Allocator, dir: *Io.Dir, io: Io, body: []u
         hash("home_directory") => handleDirectory(.ROOT, w, alloc, io, dir, body),
         hash("remember") => handleMemory(.REMEMBER, w, alloc, body, table),
         hash("recall") => handleMemory(.RECALL, w, alloc, body, table),
-        hash("ask_other_llm") => handlePromptOther(w, alloc, io, body, origin),
+        hash("ask_other_llm") => handlePromptOther(w, alloc, dir, io, body, table, origin, map),
         else => handleErrorResponse(w, error.NoSuchMethod, id, alloc),
     };
     res catch |e| {
         if (@errorReturnTrace()) |trace| std.debug.dumpErrorReturnTrace(trace);
         try handleErrorResponse(w, e, id, alloc);
     };
+}
+
+const ToolCallError = error{
+    ToolCallFailed,
+    ArgumentsParsingFailed,
+    ResultParsingFailed,
+    WritingToOutputFailed,
+};
+
+fn V1ToolCallToMcpConvert(
+    v1: ToolCallV1,
+    output: *Io.Writer,
+    alloc: Allocator,
+    dir: *Io.Dir,
+    io: Io,
+    table: *Table,
+    origin: ?[]const u8,
+    map: *Map,
+) ToolCallError!void {
+    var mcp_call = Io.Writer.Allocating.init(alloc);
+    defer mcp_call.deinit();
+
+    const parsed_args = json.parseFromSlice(
+        Arguments,
+        alloc,
+        v1.function.arguments,
+        JSON_PARSE_OPTS,
+    ) catch return ToolCallError.ArgumentsParsingFailed;
+    defer parsed_args.deinit();
+
+    const args: Arguments = parsed_args.value;
+
+    var tool_output = Io.Writer.Allocating.init(alloc);
+    defer tool_output.deinit();
+
+    const tool_request: ToolRequest = .{
+        .id = 67,
+        .method = "tools/call",
+        .params = .{
+            .name = v1.function.name,
+            .arguments = args,
+        },
+    };
+    var tool_request_stringify = Io.Writer.Allocating.init(alloc);
+    defer tool_request_stringify.deinit();
+    var tool_request_formatter = json.fmt(tool_request, STRINGIFY_OPTIONS);
+    tool_request_formatter.format(&tool_request_stringify.writer) catch {
+        return ToolCallError.ToolCallFailed;
+    };
+
+    handleCallTools(
+        &tool_output.writer,
+        alloc,
+        dir,
+        io,
+        tool_request_stringify.written(),
+        table,
+        origin,
+        map,
+    ) catch {
+        return ToolCallError.ToolCallFailed;
+    };
+
+    const parsed_result = json.parseFromSlice(
+        ToolResult,
+        alloc,
+        tool_output.written(),
+        JSON_PARSE_OPTS,
+    ) catch return ToolCallError.ResultParsingFailed;
+    defer parsed_result.deinit();
+
+    const res: ToolResult = parsed_result.value;
+
+    for (res.result.content) |content| {
+        output.writeAll(content.text) catch return ToolCallError.WritingToOutputFailed;
+    }
 }
 
 fn requestLoadedModel(w: *Writer, alloc: Allocator, io: Io, origin: []const u8) !void {
@@ -776,7 +1165,16 @@ fn requestLoadedModel(w: *Writer, alloc: Allocator, io: Io, origin: []const u8) 
     return error.NoModelsLoaded;
 }
 
-fn handlePromptOther(w: *Writer, alloc: Allocator, io: Io, body: []u8, origin: ?[]const u8) !void {
+fn handlePromptOther(
+    w: *Writer,
+    alloc: Allocator,
+    dir: *Io.Dir,
+    io: Io,
+    body: []u8,
+    table: *Table,
+    origin: ?[]const u8,
+    map: *Map,
+) !void {
     const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, JSON_PARSE_OPTS);
     defer parsed_body.deinit();
 
@@ -799,73 +1197,105 @@ fn handlePromptOther(w: *Writer, alloc: Allocator, io: Io, body: []u8, origin: ?
 
     try requestLoadedModel(&model.writer, alloc, io, llm_server);
 
-    const req_json = PromptReq{
-        .messages = &[_]Message{.{
-            .role = "user",
-            .content = prompt,
-        }},
-        .max_tokens = max_tokens,
-        .temperature = temp,
-        .model = model.written(),
-    };
-
-    var req_stringify = Io.Writer.Allocating.init(alloc);
-    defer req_stringify.deinit();
-
-    var req_json_formatter = json.fmt(req_json, STRINGIFY_OPTIONS);
-    try req_json_formatter.format(&req_stringify.writer);
-
-    var client = std.http.Client{
-        .allocator = alloc,
-        .io = io,
-    };
-    defer client.deinit();
-
-    var req = try client.request(.POST, try .parse(url), .{});
-    defer req.deinit();
-
-    req.extra_headers = JSON_HEADER;
-
-    try req.sendBodyComplete(req_stringify.written());
-
-    const redir_buf = try alloc.alloc(u8, 1024);
-    defer alloc.free(redir_buf);
-    var res = try req.receiveHead(redir_buf);
-
-    const tx_buf = try alloc.alloc(u8, 1024);
-    defer alloc.free(tx_buf);
-    const res_reader = res.reader(tx_buf);
-
-    var prompt_response = Io.Writer.Allocating.init(alloc);
-    defer prompt_response.deinit();
-
-    _ = try res_reader.stream(&prompt_response.writer, .unlimited);
-
-    const parsed_llm_response = json.parseFromSlice(
-        PromptRes,
-        alloc,
-        prompt_response.written(),
-        JSON_PARSE_OPTS,
-    ) catch |e| {
-        std.debug.print("{s}\n", .{prompt_response.written()});
-        return e;
-    };
-    defer parsed_llm_response.deinit();
-
     var client_response = Io.Writer.Allocating.init(alloc);
     defer client_response.deinit();
 
-    const llm_response: PromptRes = parsed_llm_response.value;
-    if (llm_response.choices) |choices| for (choices) |choice| {
-        if (choice.message) |msg| {
-            try client_response.writer.writeAll(msg.content);
-        }
-    };
+    var messages = try std.ArrayList(Message).initCapacity(alloc, 2);
+    defer messages.deinit(alloc);
 
-    if (client_response.written().len == 0) {
-        try client_response.writer.writeAll(prompt_response.written());
+    var writers = try std.ArrayList(Io.Writer.Allocating).initCapacity(alloc, 2);
+    defer {
+        for (writers.items) |*wr| wr.deinit();
+        writers.deinit(alloc);
     }
 
+    var parsedResponses = try std.ArrayList(json.Parsed(PromptRes)).initCapacity(alloc, 2);
+    defer {
+        for (parsedResponses.items) |p| p.deinit();
+        parsedResponses.deinit(alloc);
+    }
+
+    try messages.append(alloc, .{
+        .content = prompt,
+        .role = "user",
+    });
+
+    while (true) {
+        const req_json = PromptReq{
+            .messages = messages.items,
+            .tools = TOOL_LIST_V1,
+            .max_tokens = max_tokens,
+            .temperature = temp,
+            .model = model.written(),
+        };
+
+        var req_stringify = Io.Writer.Allocating.init(alloc);
+        defer req_stringify.deinit();
+
+        var req_json_formatter = json.fmt(req_json, STRINGIFY_OPTIONS);
+        try req_json_formatter.format(&req_stringify.writer);
+
+        var client = std.http.Client{
+            .allocator = alloc,
+            .io = io,
+        };
+        defer client.deinit();
+
+        try writers.append(alloc, .init(alloc));
+        var prompt_response = writers.getLast();
+
+        const res = try client.fetch(.{
+            .payload = req_stringify.written(),
+            .extra_headers = JSON_HEADER,
+            .keep_alive = true,
+            .response_writer = &prompt_response.writer,
+            .location = .{ .url = url },
+        });
+        if (res.status.class() != .success) break;
+
+        try parsedResponses.append(alloc, json.parseFromSlice(
+            PromptRes,
+            alloc,
+            prompt_response.written(),
+            JSON_PARSE_OPTS,
+        ) catch |e| {
+            std.debug.print("{s}\n", .{prompt_response.written()});
+            return e;
+        });
+
+        const llm_response = parsedResponses.getLast().value;
+        if (llm_response.choices) |choices| for (choices) |choice| {
+            if (choice.message) |msg| {
+                try messages.append(alloc, msg);
+                if (msg.tool_calls) |calls| {
+                    for (calls) |call| {
+                        try writers.append(alloc, .init(alloc));
+                        var tool_result = writers.getLast();
+                        try V1ToolCallToMcpConvert(
+                            call,
+                            &tool_result.writer,
+                            alloc,
+                            dir,
+                            io,
+                            table,
+                            origin,
+                            map,
+                        );
+                        try messages.append(
+                            alloc,
+                            .{
+                                .tool_call_id = call.function.name,
+                                .role = "tool",
+                                .content = tool_result.written(),
+                            },
+                        );
+                    }
+                } else break;
+                
+            }
+        };
+    }
+    try client_response.writer.writeAll(messages.getLast().content);
     try handleTextResponse(parsed_body.value.id, client_response.written(), alloc, w);
 }
 
