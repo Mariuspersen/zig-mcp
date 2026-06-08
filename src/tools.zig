@@ -110,7 +110,7 @@ pub const all_tools = [_]Tool{
             .filename = .{},
             .content = .{},
         },
-        .enabled = Config.enable_tool.file_operations,
+        .enabled = Config.enable_tool.file_write,
     },
     .{
         .name = "file_append",
@@ -120,7 +120,7 @@ pub const all_tools = [_]Tool{
             .filename = .{},
             .content = .{},
         },
-        .enabled = Config.enable_tool.file_operations,
+        .enabled = Config.enable_tool.file_write,
     },
     .{
         .name = "file_overwrite",
@@ -131,7 +131,7 @@ pub const all_tools = [_]Tool{
             .content = .{},
             .start = .{},
         },
-        .enabled = Config.enable_tool.file_operations,
+        .enabled = Config.enable_tool.file_write,
     },
     .{
         .name = "file_read",
@@ -140,7 +140,7 @@ pub const all_tools = [_]Tool{
         .properties = .{
             .filename = .{},
         },
-        .enabled = Config.enable_tool.file_operations,
+        .enabled = Config.enable_tool.file_read,
     },
     .{
         .name = "file_read_slice",
@@ -151,14 +151,14 @@ pub const all_tools = [_]Tool{
             .start = .{},
             .end = .{},
         },
-        .enabled = Config.enable_tool.file_operations,
+        .enabled = Config.enable_tool.file_read,
     },
     .{
         .name = "file_list",
         .description = "Returns a list of all files in the current directory.",
         .required = &.{},
         .properties = .{},
-        .enabled = Config.enable_tool.file_operations,
+        .enabled = Config.enable_tool.file_read,
     },
     .{
         .name = "file_size",
@@ -167,7 +167,7 @@ pub const all_tools = [_]Tool{
         .properties = .{
             .filename = .{},
         },
-        .enabled = Config.enable_tool.file_operations,
+        .enabled = Config.enable_tool.file_read,
     },
     .{
         .name = "file_delete",
@@ -177,7 +177,7 @@ pub const all_tools = [_]Tool{
             .filename = .{},
             .directory_name = .{},
         },
-        .enabled = Config.enable_tool.file_operations,
+        .enabled = Config.enable_tool.file_write,
     },
     .{
         .name = "change_directory",
@@ -186,21 +186,21 @@ pub const all_tools = [_]Tool{
         .properties = .{
             .directory_name = .{},
         },
-        .enabled = Config.enable_tool.file_operations,
+        .enabled = Config.enable_tool.file_read,
     },
     .{
         .name = "current_directory",
         .description = "Returns the full path of the current working directory.",
         .required = &.{},
         .properties = .{},
-        .enabled = Config.enable_tool.file_operations,
+        .enabled = Config.enable_tool.file_read,
     },
     .{
         .name = "home_directory",
         .description = "Changes to and returns the user's home directory.",
         .required = &.{},
         .properties = .{},
-        .enabled = Config.enable_tool.file_operations,
+        .enabled = Config.enable_tool.file_read,
     },
     .{
         .name = "remember",
