@@ -157,7 +157,9 @@ pub const all_tools = [_]Tool{
         .name = "file_list",
         .description = "Returns a list of all files in the current directory.",
         .required = &.{},
-        .properties = .{},
+        .properties = .{
+            .query = .{}
+        },
         .enabled = Config.enable_tool.file_read,
     },
     .{
@@ -186,21 +188,21 @@ pub const all_tools = [_]Tool{
         .properties = .{
             .directory_name = .{},
         },
-        .enabled = Config.enable_tool.file_read,
+        .enabled = Config.enable_tool.directory,
     },
     .{
         .name = "current_directory",
         .description = "Returns the full path of the current working directory.",
         .required = &.{},
         .properties = .{},
-        .enabled = Config.enable_tool.file_read,
+        .enabled = Config.enable_tool.directory,
     },
     .{
         .name = "home_directory",
         .description = "Changes to and returns the user's home directory.",
         .required = &.{},
         .properties = .{},
-        .enabled = Config.enable_tool.file_read,
+        .enabled = Config.enable_tool.directory,
     },
     .{
         .name = "remember",

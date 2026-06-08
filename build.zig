@@ -3,7 +3,7 @@ const zon = @import("build.zig.zon");
 
 pub fn build(b: *std.Build) void {
     const server_name = @tagName(zon.name);
-    const agent_name = server_name ++ "agent";
+    const agent_name = "zig_agent";
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 

@@ -37,7 +37,7 @@ pub const JSON_PARSE_OPTS = json.ParseOptions{
 pub const DIR_OPTIONS = Io.Dir.OpenOptions{
     .follow_symlinks = false,
     .iterate = true,
-    .access_sub_paths = false,
+    .access_sub_paths = true,
 };
 
 pub const EXTRA_HEADERS: []const http.Header = &.{
@@ -759,7 +759,10 @@ pub fn handlePromptOtherImpl(
                             map,
                         );
                         if (progress) |p_writer| {
-                            try p_writer.print("TOOL: {s} {s}\n", .{call.function.name, call.function.arguments});
+                            try p_writer.print(
+                                "TOOL: {s} {s}\n",
+                                .{ call.function.name, call.function.arguments },
+                            );
                             try p_writer.flush();
                         }
                         try messages.append(
@@ -1320,17 +1323,24 @@ fn handleListFiles(w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []u
     const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, JSON_PARSE_OPTS);
     defer parsed_body.deinit();
 
+    const parsed_req: ToolRequest = parsed_body.value;
+
     var response = Io.Writer.Allocating.init(alloc);
     defer response.deinit();
 
-    var walker = try dir.walkSelectively(alloc);
+    var walker = try dir.walk(alloc);
     defer walker.deinit();
 
-    while (try walker.next(io)) |entry| {
-        //Dont even give it a fucking chance
-        if (std.mem.eql(u8, entry.basename, ".git")) continue;
-        try response.writer.print("{s} -> {s}\n", .{ @tagName(entry.kind), entry.basename });
-    }
+    if (parsed_req.params.arguments.query) |query|
+        while (try walker.next(io)) |entry| {
+            if (entry.kind == .directory) continue;
+            if (std.mem.find(u8, entry.path, query)) |_| {
+                try response.writer.print("{s}\n", .{entry.path});
+            }
+        } else while (try walker.next(io)) |entry| {
+            if (entry.kind == .directory) continue;
+            try response.writer.print("{s}\n", .{entry.path});
+        };
 
     if (response.written().len == 0) {
         try response.writer.print("No files in directory", .{});
