@@ -1,5 +1,5 @@
 const std = @import("std");
-const main = @import("main.zig");
+const server = @import("server.zig");
 const json = std.json;
 const testing = std.testing;
 
@@ -9,7 +9,7 @@ const ToolRequest = @import("tool_request.zig");
 test "Test Directory Operations" {
     const gba = std.testing.allocator;
     const io = std.testing.io;
-    var tmp_dir = std.testing.tmpDir(main.DIR_OPTIONS);
+    var tmp_dir = std.testing.tmpDir(server.DIR_OPTIONS);
     var w = Io.Writer.Allocating.init(gba);
     defer w.deinit();
 
@@ -28,12 +28,12 @@ test "Test Directory Operations" {
     };
     var formatter = json.fmt(
         req,
-        main.STRINGIFY_OPTIONS,
+        server.STRINGIFY_OPTIONS,
     );
     try formatter.format(&body.writer);
     try std.testing.expectError(
         error.UseRootDirectoryCommand,
-        main.handleDirectory(
+        server.handleDirectory(
             .CHANGE,
             &w.writer,
             gba,
@@ -56,10 +56,10 @@ test "Test Directory Operations" {
     };
     formatter = json.fmt(
         req,
-        main.STRINGIFY_OPTIONS,
+        server.STRINGIFY_OPTIONS,
     );
     try formatter.format(&body.writer);
-    try main.handleDirectory(
+    try server.handleDirectory(
         .CHANGE,
         &w.writer,
         gba,
@@ -79,10 +79,10 @@ test "Test Directory Operations" {
     };
     formatter = json.fmt(
         req,
-        main.STRINGIFY_OPTIONS,
+        server.STRINGIFY_OPTIONS,
     );
     try formatter.format(&body.writer);
-    try main.handleDirectory(
+    try server.handleDirectory(
         .CURRENT,
         &w.writer,
         gba,
@@ -103,10 +103,10 @@ test "Test Directory Operations" {
     };
     formatter = json.fmt(
         root_json,
-        main.STRINGIFY_OPTIONS,
+        server.STRINGIFY_OPTIONS,
     );
     try formatter.format(&body.writer);
-    try main.handleDirectory(
+    try server.handleDirectory(
         .ROOT,
         &w.writer,
         gba,
@@ -126,10 +126,10 @@ test "Test Directory Operations" {
     };
     formatter = json.fmt(
         req,
-        main.STRINGIFY_OPTIONS,
+        server.STRINGIFY_OPTIONS,
     );
     try formatter.format(&body.writer);
-    try main.handleDirectory(
+    try server.handleDirectory(
         .CURRENT,
         &w.writer,
         gba,
@@ -150,7 +150,7 @@ test "Test Directory Operations" {
     };
     formatter = json.fmt(
         req,
-        main.STRINGIFY_OPTIONS,
+        server.STRINGIFY_OPTIONS,
     );
     try formatter.format(&body.writer);
     std.debug.print("{s}\n", .{w.written()});
@@ -168,7 +168,7 @@ test "Check memory recalling" {
     var w = Io.Writer.Allocating.init(gba);
     defer w.deinit();
 
-    var table = main.Table.init(gba);
+    var table = server.Table.init(gba);
     defer {
         var it = table.iterator();
         while (it.next()) |entry| {
@@ -194,11 +194,11 @@ test "Check memory recalling" {
     };
     var body_formatter = json.fmt(
         body_json,
-        main.STRINGIFY_OPTIONS,
+        server.STRINGIFY_OPTIONS,
     );
     try body_formatter.format(&body.writer);
 
-    try main.handleMemory(
+    try server.handleMemory(
         .REMEMBER,
         &w.writer,
         gba,
@@ -219,10 +219,10 @@ test "Check memory recalling" {
     };
     body_formatter = json.fmt(
         body_json,
-        main.STRINGIFY_OPTIONS,
+        server.STRINGIFY_OPTIONS,
     );
     try body_formatter.format(&body.writer);
-    try main.handleMemory(
+    try server.handleMemory(
         .RECALL,
         &w.writer,
         gba,

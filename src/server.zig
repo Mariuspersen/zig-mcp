@@ -626,6 +626,34 @@ fn handlePromptOther(
     origin: ?[]const u8,
     map: *Map,
 ) !void {
+    var messages = try std.ArrayList(Message).initCapacity(alloc, 2);
+    defer messages.deinit(alloc);
+    try handlePromptOtherImpl(
+        w,
+        null,
+        alloc,
+        dir,
+        io,
+        body,
+        table,
+        origin,
+        map,
+        &messages,
+    );
+}
+
+pub fn handlePromptOtherImpl(
+    w: *Writer,
+    progress: ?*Writer,
+    alloc: Allocator,
+    dir: *Io.Dir,
+    io: Io,
+    body: []u8,
+    table: *Table,
+    origin: ?[]const u8,
+    map: *Map,
+    messages: *std.ArrayList(Message),
+) !void {
     const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, JSON_PARSE_OPTS);
     defer parsed_body.deinit();
 
@@ -650,9 +678,6 @@ fn handlePromptOther(
 
     var client_response = Io.Writer.Allocating.init(alloc);
     defer client_response.deinit();
-
-    var messages = try std.ArrayList(Message).initCapacity(alloc, 2);
-    defer messages.deinit(alloc);
 
     var writers = try std.ArrayList(Io.Writer.Allocating).initCapacity(alloc, 2);
     defer {
@@ -732,6 +757,10 @@ fn handlePromptOther(
                             origin,
                             map,
                         );
+                        if (progress) |p_writer| {
+                            try p_writer.print("TOOL: {s}\n", .{call.function.name});
+                            try p_writer.flush();
+                        }
                         try messages.append(
                             alloc,
                             .{
