@@ -5,10 +5,10 @@
     .minimum_zig_version = "0.16.0",
     .PROTOCOL_VERSION = "2025-06-18",
     .JSONRPC = "2.0",
-    .searxng_hostname = "http://server:6769",
-    .remote_llm = "192.168.10.188",
+    .searxng_hostname = null,
+    .remote_llm = null,
     .enable_tool = .{
-        .file_write = true,
+        .file_write = false,
         .file_read = true,
         .memory = true,
         .system = true,

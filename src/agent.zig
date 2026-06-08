@@ -35,7 +35,8 @@ pub fn main(init: std.process.Init.Minimal) !void {
         table.deinit();
     }
 
-    var dir = Io.Dir.cwd();
+    var dir = try Io.Dir.cwd().openDir(io, ".", Server.DIR_OPTIONS);
+    defer dir.close(io);
 
     var messages = try std.ArrayList(Message).initCapacity(gpa, 2);
     defer messages.deinit(gpa);

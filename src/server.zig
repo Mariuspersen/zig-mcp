@@ -709,6 +709,7 @@ pub fn handlePromptOtherImpl(
         defer req_stringify.deinit();
 
         var req_json_formatter = json.fmt(req_json, STRINGIFY_OPTIONS);
+        //TODO: Figure out why this crashes sometimes with General protection exception std/unicode.zig:243:43
         try req_json_formatter.format(&req_stringify.writer);
 
         var client = std.http.Client{
@@ -758,7 +759,7 @@ pub fn handlePromptOtherImpl(
                             map,
                         );
                         if (progress) |p_writer| {
-                            try p_writer.print("TOOL: {s}\n", .{call.function.name});
+                            try p_writer.print("TOOL: {s} {s}\n", .{call.function.name, call.function.arguments});
                             try p_writer.flush();
                         }
                         try messages.append(
