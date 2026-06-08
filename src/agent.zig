@@ -68,7 +68,7 @@ pub fn main(init: std.process.Init.Minimal) !void {
         try stdout.writeAll("USER: ");
         try stdout.flush();
         _ = try stdin.streamDelimiter(&buffer.writer, '\n');
-        _ = try stdin.discard(.unlimited);
+        stdin.toss(1);
 
         try text_buf.append(gpa, .init(gpa));
         var promp_response = text_buf.getLast();

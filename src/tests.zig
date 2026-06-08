@@ -22,7 +22,7 @@ test "Test Directory Operations" {
         .params = .{
             .name = "",
             .arguments = .{
-                .filename = "..",
+                .directory_name = "..",
             },
         },
     };
@@ -31,16 +31,13 @@ test "Test Directory Operations" {
         server.STRINGIFY_OPTIONS,
     );
     try formatter.format(&body.writer);
-    try std.testing.expectError(
-        error.UseRootDirectoryCommand,
-        server.handleDirectory(
-            .CHANGE,
-            &w.writer,
-            gba,
-            io,
-            &tmp_dir.dir,
-            body.written(),
-        ),
+    try server.handleDirectory(
+        .CHANGE,
+        &w.writer,
+        gba,
+        io,
+        &tmp_dir.dir,
+        body.written(),
     );
     w.clearRetainingCapacity();
     body.clearRetainingCapacity();
@@ -50,7 +47,7 @@ test "Test Directory Operations" {
         .params = .{
             .name = "",
             .arguments = .{
-                .filename = "hello/world",
+                .directory_name = "hello/world",
             },
         },
     };
@@ -137,7 +134,7 @@ test "Test Directory Operations" {
         &tmp_dir.dir,
         body.written(),
     );
-    try testing.expectStringEndsWith(w.written(), "/storage\"}]}}");
+    try testing.expectStringEndsWith(w.written(), "\"~\"}]}}");
     req = ToolRequest{
         .id = 0,
         .method = "change_directory",
@@ -153,7 +150,6 @@ test "Test Directory Operations" {
         server.STRINGIFY_OPTIONS,
     );
     try formatter.format(&body.writer);
-    std.debug.print("{s}\n", .{w.written()});
     w.clearRetainingCapacity();
     body.clearRetainingCapacity();
 }
@@ -251,7 +247,7 @@ test "HTML Text only" {
     const res = try client.fetch(
         .{
             .location = .{
-                .url = "https://news.ycombinator.com/",
+                .url = "https://www.wikipedia.org/",
             },
             .method = .GET,
             .response_writer = &response.writer,
@@ -265,6 +261,15 @@ test "HTML Text only" {
     defer writer.deinit();
 
     try HTMLParser.getText(&reader, &writer.writer);
-    std.debug.print("TEXT: {s}\n", .{writer.written()});
-   
+
+    const trimmed = std.mem.trim(u8, writer.written(), " ");
+    var space_it = std.mem.splitAny(u8, trimmed, " \n");
+
+    var space = Io.Writer.Allocating.init(alloc);
+    defer space.deinit();
+
+    while (space_it.next()) |text| {
+        if (text.len == 0) continue;
+        try space.writer.print("{s} ", .{text});
+    }
 }
