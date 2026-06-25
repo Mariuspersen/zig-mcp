@@ -470,13 +470,7 @@ fn handleCallTools(w: *Writer, alloc: Allocator, dir: *Io.Dir, io: Io, body: []u
         hash("date_time") => handleDateTime(w, alloc, io, body),
         hash("web_request") => handleWebRequest(w, alloc, io, body),
         hash("web_search") => handleWebSearch(w, alloc, io, body),
-        hash("gcc") => handleCommand(&.{"gcc"}, w, alloc, io, dir, body, map),
-        hash("make") => handleCommand(&.{"make"}, w, alloc, io, dir, body, map),
-        hash("man") => handleCommand(&.{"man"}, w, alloc, io, dir, body, map),
-        hash("valgrind") => handleCommand(&.{"valgrind"}, w, alloc, io, dir, body, map),
-        hash("grep") => handleCommand(&.{"grep"}, w, alloc, io, dir, body, map),
-        hash("git") => handleCommand(&.{"git"}, w, alloc, io, dir, body, map),
-        hash("openscad") => handleCommand(&.{"openscad"}, w, alloc, io, dir, body, map),
+        hash("cmd") => handleCommand(w, alloc, io, dir, body, map),
         hash("change_directory") => handleDirectory(.CHANGE, w, alloc, io, dir, body),
         hash("current_directory") => handleDirectory(.CURRENT, w, alloc, io, dir, body),
         hash("home_directory") => handleDirectory(.ROOT, w, alloc, io, dir, body),
@@ -1370,20 +1364,31 @@ fn handleErrorResponse(w: *Writer, e: anyerror, id: usize, alloc: Allocator) !vo
     try res_json_struct_fmt.format(w);
 }
 
-fn handleCommand(cmd: []const []const u8, w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []u8, map: *Map) !void {
+fn handleCommand(w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []u8, map: *Map) !void {
     const parsed_body = try json.parseFromSlice(ToolRequest, alloc, body, JSON_PARSE_OPTS);
     defer parsed_body.deinit();
 
     const parsed_json: ToolRequest = parsed_body.value;
 
-    const arguments = parsed_json.params.arguments.arguments orelse error.NoArgumentsGiven;
+    const program = parsed_json.params.arguments.program orelse return error.NoProgramGiven;
+    const arguments = parsed_json.params.arguments.arguments orelse return error.NoArgumentsGiven;
+
+    var valid = false;
+    inline for (Config.cmd_whitelist) |whitelisted| {
+        if (std.mem.eql(u8, whitelisted, program)) {
+            valid = true;
+        }
+        if (valid) break;
+    }
+
+    if (!valid) return error.ProgramNotOnWhitelist;
 
     var response = Io.Writer.Allocating.init(alloc);
     defer response.deinit();
 
     const concat_args = try std.mem.concat(alloc, []const u8, &.{
-        cmd,
-        try arguments,
+        &.{ program },
+        arguments,
     });
     defer alloc.free(concat_args);
 

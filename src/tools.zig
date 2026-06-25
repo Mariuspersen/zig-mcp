@@ -64,6 +64,20 @@ pub const MaxTokens = struct {
     description: []const u8 = "Optional. Maximum number of tokens the other LLM is allowed to generate.",
 };
 
+const PROGRAM_WHITELIST = blk: {
+    var list: []const u8 = "";
+    for (Config.cmd_whitelist) |program| {
+        
+        list = list ++ " - " ++ program ++ "\n";
+    }
+    break :blk list;
+};
+
+pub const Program = struct {
+    type: []const u8 = "string",
+    description: []const u8 = "Exact name of the program to run",
+};
+
 pub const PropertySet = struct {
     operation: ?Operation = null,
     a: ?A = null,
@@ -80,6 +94,7 @@ pub const PropertySet = struct {
     query: ?Query = null,
     temperature: ?Temperature = null,
     max_tokens: ?MaxTokens = null,
+    program: ?Program = null,
 };
 
 pub const Tool = struct {
@@ -157,9 +172,7 @@ pub const all_tools = [_]Tool{
         .name = "file_list",
         .description = "Returns a list of all files in the current directory.",
         .required = &.{},
-        .properties = .{
-            .query = .{}
-        },
+        .properties = .{ .query = .{}, },
         .enabled = Config.enable_tool.file_read,
     },
     .{
@@ -249,64 +262,14 @@ pub const all_tools = [_]Tool{
         .enabled = Config.enable_tool.web,
     },
     .{
-        .name = "gcc",
-        .description = "Runs the GNU C Compiler (gcc) with the given command-line arguments.",
-        .required = &.{"arguments"},
-        .properties = .{
-            .arguments = .{},
+        .name = "cmd",
+        .description = "Runs a program with a set of arguments, program must be on this whitelist:\n" ++ PROGRAM_WHITELIST,
+        .required = &.{
+            "program",
+            "arguments",
         },
-        .enabled = Config.enable_tool.cmd,
-    },
-    .{
-        .name = "make",
-        .description = "Runs GNU Make to build projects using the given arguments.",
-        .required = &.{"arguments"},
         .properties = .{
-            .arguments = .{},
-        },
-        .enabled = Config.enable_tool.cmd,
-    },
-    .{
-        .name = "man",
-        .description = "Shows the manual page for a command or topic.",
-        .required = &.{"arguments"},
-        .properties = .{
-            .arguments = .{},
-        },
-        .enabled = Config.enable_tool.cmd,
-    },
-    .{
-        .name = "openscad",
-        .description = "Runs OpenSCAD to create or render 3D models from .scad files.",
-        .required = &.{"arguments"},
-        .properties = .{
-            .arguments = .{},
-        },
-        .enabled = Config.enable_tool.cmd,
-    },
-    .{
-        .name = "valgrind",
-        .description = "Runs Valgrind for memory debugging, leak detection, or profiling.",
-        .required = &.{"arguments"},
-        .properties = .{
-            .arguments = .{},
-        },
-        .enabled = Config.enable_tool.cmd,
-    },
-    .{
-        .name = "grep",
-        .description = "Searches for text inside files using grep with the given arguments.",
-        .required = &.{"arguments"},
-        .properties = .{
-            .arguments = .{},
-        },
-        .enabled = Config.enable_tool.cmd,
-    },
-    .{
-        .name = "git",
-        .description = "Runs git version control commands with the given arguments.",
-        .required = &.{"arguments"},
-        .properties = .{
+            .program = .{},
             .arguments = .{},
         },
         .enabled = Config.enable_tool.cmd,
