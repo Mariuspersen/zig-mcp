@@ -6,6 +6,6 @@ const ContentType = @import("content_type.zig");
 jsonrpc: []const u8 = JSONRPC,
 id: usize,
 result: struct {
-    content: []const ContentType,
+    content: ?[]const ContentType = null,
     isError: ?bool = null,
 },

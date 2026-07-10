@@ -1,100 +1,111 @@
 const Config = @import("config");
 
-pub const Operation = struct {
-    type: []const u8 = "string",
-    description: []const u8 = "Math operation. Must be exactly one of: add, subtract, multiply, divide, sqrt",
+const ItemsType = struct {
+    type: []const u8,
 };
-pub const A = struct {
-    type: []const u8 = "number",
-    description: []const u8 = "First number for the math operation",
+
+pub const Property = struct {
+    type: []const u8,
+    description: []const u8,
+    items: ?ItemsType = null,
+    minimum: ?i32 = null,
+    maximum: ?i32 = null,
 };
-pub const B = struct {
-    type: []const u8 = "number",
-    description: []const u8 = "Second number for the math operation (not needed for sqrt)",
+
+const Operation = Property{
+    .type = "string",
+    .description = "Math operation. Must be exactly one of: add, subtract, multiply, divide, sqrt",
 };
-pub const Filename = struct {
-    type: []const u8 = "string",
-    description: []const u8 = "Exact name of the file (with extension if it has one)",
+
+const A = Property{
+    .type = "number",
+    .description = "First number for the math operation",
 };
-pub const DirectoryName = struct {
-    type: []const u8 = "string",
-    description: []const u8 = "Exact name of the directory",
+const B = Property{
+    .type = "number",
+    .description = "Second number for the math operation (not needed for sqrt)",
 };
-pub const Content = struct {
-    type: []const u8 = "string",
-    description: []const u8 = "Full text to write into the file. This replaces everything in the file",
+const Filename = Property{
+    .type = "string",
+    .description = "Exact name of the file (with extension if it has one)",
 };
-pub const Start = struct {
-    type: []const u8 = "number",
-    description: []const u8 = "Starting position in the file (0 = beginning)",
+const DirectoryName = Property{
+    .type = "string",
+    .description = "Exact name of the directory",
 };
-pub const End = struct {
-    type: []const u8 = "number",
-    description: []const u8 = "Ending position in the file (0-based)",
+const Content = Property{
+    .type = "string",
+    .description = "Full text to write into the file. This replaces everything in the file",
 };
-pub const Keyword = struct {
-    type: []const u8 = "string",
-    description: []const u8 = "Word or short phrase to save or look up in memory",
+const Start = Property{
+    .type = "number",
+    .description = "Starting position in the file (0 = beginning)",
 };
-pub const URL = struct {
-    type: []const u8 = "string",
-    description: []const u8 = "Full web address starting with http:// or https://",
+const End = Property{
+    .type = "number",
+    .description = "Ending position in the file (0-based)",
 };
-pub const Arguments = struct {
-    type: []const u8 = "array",
-    items: struct { type: []const u8 = "string" } = .{},
-    description: []const u8 = "List of string values to pass as command arguments",
+const Keyword = Property{
+    .type = "string",
+    .description = "Word or short phrase to save or look up in memory",
 };
-pub const Prompt = struct {
-    type: []const u8 = "string",
-    description: []const u8 = "The complete prompt or question to send to the other LLM",
+const URL = Property{
+    .type = "string",
+    .description = "Full web address starting with http:// or https://",
 };
-pub const Query = struct {
-    type: []const u8 = "string",
-    description: []const u8 = "What to search for",
+const Arguments = Property{
+    .type = "array",
+    .items = .{ .type = "string" },
+    .description = "List of string values to pass as command arguments",
 };
-pub const Temperature = struct {
-    type: []const u8 = "number",
-    description: []const u8 = "Optional. Controls randomness/creativity. 0.0 = deterministic, 1.0 = balanced, >1.0 = more creative. Usually defaults to ~0.7.",
-    minimum: i32 = 0,
-    maximum: i32 = 2,
+const Prompt = Property{
+    .type = "string",
+    .description = "The complete prompt or question to send to the other LLM",
 };
-pub const MaxTokens = struct {
-    type: []const u8 = "integer",
-    description: []const u8 = "Optional. Maximum number of tokens the other LLM is allowed to generate.",
+const Query = Property{
+    .type = "string",
+    .description = "What to search for",
+};
+const Temperature = Property{
+    .type = "number",
+    .description = "Optional. Controls randomness/creativity. 0.0 = deterministic, 1.0 = balanced, >1.0 = more creative. Usually defaults to ~0.7.",
+    .minimum = 0,
+    .maximum = 2,
+};
+const MaxTokens = Property{
+    .type = "integer",
+    .description = "Optional. Maximum number of tokens the other LLM is allowed to generate.",
+};
+const Program = Property{
+    .type = "string",
+    .description = "Exact name of the program to run",
 };
 
 const PROGRAM_WHITELIST = blk: {
     var list: []const u8 = "";
     for (Config.cmd_whitelist) |program| {
-        
         list = list ++ " - " ++ program ++ "\n";
     }
     break :blk list;
 };
 
-pub const Program = struct {
-    type: []const u8 = "string",
-    description: []const u8 = "Exact name of the program to run",
-};
-
 pub const PropertySet = struct {
-    operation: ?Operation = null,
-    a: ?A = null,
-    b: ?B = null,
-    filename: ?Filename = null,
-    directory_name: ?DirectoryName = null,
-    content: ?Content = null,
-    start: ?Start = null,
-    end: ?End = null,
-    keyword: ?Keyword = null,
-    url: ?URL = null,
-    arguments: ?Arguments = null,
-    prompt: ?Prompt = null,
-    query: ?Query = null,
-    temperature: ?Temperature = null,
-    max_tokens: ?MaxTokens = null,
-    program: ?Program = null,
+    operation: ?Property = null,
+    a: ?Property = null,
+    b: ?Property = null,
+    filename: ?Property = null,
+    directory_name: ?Property = null,
+    content: ?Property = null,
+    start: ?Property = null,
+    end: ?Property = null,
+    keyword: ?Property = null,
+    url: ?Property = null,
+    arguments: ?Property = null,
+    prompt: ?Property = null,
+    query: ?Property = null,
+    temperature: ?Property = null,
+    max_tokens: ?Property = null,
+    program: ?Property = null,
 };
 
 pub const Tool = struct {
@@ -111,9 +122,9 @@ pub const all_tools = [_]Tool{
         .description = "Performs basic math. Use operation 'add', 'subtract', 'multiply', 'divide', or 'sqrt'. Provide 'a' and 'b' for two-number operations.",
         .required = &.{"operation"},
         .properties = .{
-            .operation = .{},
-            .a = .{},
-            .b = .{},
+            .operation = Operation,
+            .a = A,
+            .b = B,
         },
         .enabled = Config.enable_tool.math,
     },
@@ -122,8 +133,8 @@ pub const all_tools = [_]Tool{
         .description = "Creates a new file or completely replaces an existing file with the given content.",
         .required = &.{ "filename", "content" },
         .properties = .{
-            .filename = .{},
-            .content = .{},
+            .filename = Filename,
+            .content = Content,
         },
         .enabled = Config.enable_tool.file_write,
     },
@@ -132,8 +143,8 @@ pub const all_tools = [_]Tool{
         .description = "Opens a file and adds the content to the very end without removing anything.",
         .required = &.{ "filename", "content" },
         .properties = .{
-            .filename = .{},
-            .content = .{},
+            .filename = Filename,
+            .content = Content,
         },
         .enabled = Config.enable_tool.file_write,
     },
@@ -142,9 +153,9 @@ pub const all_tools = [_]Tool{
         .description = "Overwrites text inside a file starting at a specific position.",
         .required = &.{ "filename", "content", "start" },
         .properties = .{
-            .filename = .{},
-            .content = .{},
-            .start = .{},
+            .filename = Filename,
+            .content = Content,
+            .start = Start,
         },
         .enabled = Config.enable_tool.file_write,
     },
@@ -153,7 +164,7 @@ pub const all_tools = [_]Tool{
         .description = "Reads and returns the entire content of a file.",
         .required = &.{"filename"},
         .properties = .{
-            .filename = .{},
+            .filename = Filename,
         },
         .enabled = Config.enable_tool.file_read,
     },
@@ -162,9 +173,9 @@ pub const all_tools = [_]Tool{
         .description = "Reads only part of a file between two positions (start and end).",
         .required = &.{"filename"},
         .properties = .{
-            .filename = .{},
-            .start = .{},
-            .end = .{},
+            .filename = Filename,
+            .start = Start,
+            .end = End,
         },
         .enabled = Config.enable_tool.file_read,
     },
@@ -172,7 +183,9 @@ pub const all_tools = [_]Tool{
         .name = "file_list",
         .description = "Returns a list of all files in the current directory.",
         .required = &.{},
-        .properties = .{ .query = .{}, },
+        .properties = .{
+            .query = Query,
+        },
         .enabled = Config.enable_tool.file_read,
     },
     .{
@@ -180,7 +193,7 @@ pub const all_tools = [_]Tool{
         .description = "Returns the size of a file in bytes.",
         .required = &.{},
         .properties = .{
-            .filename = .{},
+            .filename = Filename,
         },
         .enabled = Config.enable_tool.file_read,
     },
@@ -189,8 +202,8 @@ pub const all_tools = [_]Tool{
         .description = "Deletes a file or a directory.",
         .required = &.{},
         .properties = .{
-            .filename = .{},
-            .directory_name = .{},
+            .filename = Filename,
+            .directory_name = DirectoryName,
         },
         .enabled = Config.enable_tool.file_write,
     },
@@ -199,7 +212,7 @@ pub const all_tools = [_]Tool{
         .description = "Changes the current working directory to the given folder. Creates the folder if it does not exist.",
         .required = &.{"directory_name"},
         .properties = .{
-            .directory_name = .{},
+            .directory_name = DirectoryName,
         },
         .enabled = Config.enable_tool.directory,
     },
@@ -222,17 +235,17 @@ pub const all_tools = [_]Tool{
         .description = "Stores content in memory using a keyword so it can be recalled later.",
         .required = &.{},
         .properties = .{
-            .keyword = .{},
-            .content = .{},
+            .keyword = Keyword,
+            .content = Content,
         },
         .enabled = Config.enable_tool.memory,
     },
     .{
         .name = "recall",
         .description = "Retrieves content from memory using a keyword.",
-        .required = &.{},
+        .required = &.{"keyword"},
         .properties = .{
-            .keyword = .{},
+            .keyword = Keyword,
         },
         .enabled = Config.enable_tool.memory,
     },
@@ -248,7 +261,7 @@ pub const all_tools = [_]Tool{
         .description = "Fetches the content from any URL and returns just the text.",
         .required = &.{"url"},
         .properties = .{
-            .url = .{},
+            .url = URL,
         },
         .enabled = Config.enable_tool.web,
     },
@@ -257,7 +270,7 @@ pub const all_tools = [_]Tool{
         .description = "Search the internet given a search query",
         .required = &.{"query"},
         .properties = .{
-            .query = .{},
+            .query = Query,
         },
         .enabled = Config.enable_tool.web,
     },
@@ -269,8 +282,8 @@ pub const all_tools = [_]Tool{
             "arguments",
         },
         .properties = .{
-            .program = .{},
-            .arguments = .{},
+            .program = Program,
+            .arguments = Arguments,
         },
         .enabled = Config.enable_tool.cmd,
     },
@@ -282,9 +295,9 @@ pub const all_tools = [_]Tool{
         ,
         .required = &.{"prompt"},
         .properties = .{
-            .prompt = .{},
-            .temperature = .{},
-            .max_tokens = .{},
+            .prompt = Prompt,
+            .temperature = Temperature,
+            .max_tokens = MaxTokens,
         },
         .enabled = Config.enable_tool.ai,
     },

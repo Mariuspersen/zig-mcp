@@ -7,6 +7,7 @@ const net = Io.net;
 const time = std.time;
 const epoch = time.epoch;
 const Map = std.process.Environ.Map;
+const builtin = @import("builtin");
 
 const Writer = Io.Writer;
 const Allocator = std.mem.Allocator;
@@ -122,6 +123,8 @@ const ToolEntryV1 = @import("tool_entry_v1.zig");
 const ToolCallV1 = @import("tool_call_v1.zig");
 const Arguments = @import("arguments.zig");
 const Tools = @import("tools.zig");
+const ErrorRes = @import("error_res.zig");
+const IdOnly = @import("id_only.zig");
 
 const address = IpAddress.parse(Config.hostname, Config.port) catch |e| {
     @compileError("Unable to resolve IP Address: " ++ e);
@@ -130,14 +133,19 @@ const address = IpAddress.parse(Config.hostname, Config.port) catch |e| {
 fn ignoreSigint(_: std.posix.SIG) callconv(.c) void {}
 
 pub fn main(init: std.process.Init.Minimal) !void {
-    const sa = std.posix.Sigaction{
-        .handler = .{
-            .handler = ignoreSigint,
+    switch (builtin.os.tag) {
+        .windows => {},
+        else => {
+            const sa = std.posix.Sigaction{
+                .handler = .{
+                    .handler = ignoreSigint,
+                },
+                .mask = std.posix.sigemptyset(),
+                .flags = std.posix.SA.RESTART,
+            };
+            std.posix.sigaction(std.posix.SIG.INT, &sa, null);
         },
-        .mask = std.posix.sigemptyset(),
-        .flags = std.posix.SA.RESTART,
-    };
-    std.posix.sigaction(std.posix.SIG.INT, &sa, null);
+    }
 
     const alloc = std.heap.smp_allocator;
     var threaded = Io.Threaded.init(
@@ -201,24 +209,35 @@ fn listenStdin(io: Io, future: *Io.Future(error{Canceled}!void)) Io.Cancelable!v
 
 fn listenStdinImpl(io: Io, future: *Io.Future(error{Canceled}!void)) !void {
     var f = Io.File.stdin();
-    var term = try std.posix.tcgetattr(f.handle);
-    term.lflag.ICANON = false;
-    term.lflag.ECHO = false;
-    term.lflag.IEXTEN = false;
-    term.lflag.ISIG = false;
-    term.iflag.ICRNL = false;
-    term.iflag.IXON = false;
-    try std.posix.tcsetattr(f.handle, .NOW, term);
-
-    defer {
-        term.lflag.ICANON = true;
-        term.lflag.ECHO = true;
-        term.lflag.IEXTEN = true;
-        term.lflag.ISIG = true;
-        term.iflag.ICRNL = true;
-        term.iflag.IXON = true;
-        std.posix.tcsetattr(f.handle, .NOW, term) catch {};
+    var term = switch (builtin.os.tag) {
+        .windows => {},
+        else => try std.posix.tcgetattr(f.handle),
+    };
+    switch (builtin.os.tag) {
+        .windows => {},
+        else => {
+            term.lflag.ICANON = false;
+            term.lflag.ECHO = false;
+            term.lflag.IEXTEN = false;
+            term.lflag.ISIG = false;
+            term.iflag.ICRNL = false;
+            term.iflag.IXON = false;
+            try std.posix.tcsetattr(f.handle, .NOW, term);
+        },
     }
+
+    defer switch (builtin.os.tag) {
+        .windows => {},
+        else => {
+            term.lflag.ICANON = true;
+            term.lflag.ECHO = true;
+            term.lflag.IEXTEN = true;
+            term.lflag.ISIG = true;
+            term.iflag.ICRNL = true;
+            term.iflag.IXON = true;
+            std.posix.tcsetattr(f.handle, .NOW, term) catch {};
+        },
+    };
 
     var buf: [1]u8 = undefined;
     var f_reader = f.reader(io, &buf);
@@ -396,16 +415,22 @@ fn handleConnectionImpl(alloc: Allocator, s: net.Stream, io: Io, dir: *Io.Dir, s
             req_addr.written(),
             map,
         ),
-        else => {
-            try req.respond(
-                "{}",
-                .{
-                    .status = .not_found,
-                    .extra_headers = JSON_HEADER,
-                },
-            );
-            return;
+        hash("ping") => {
+            const id_body = try json.parseFromSlice(IdOnly, alloc, body, JSON_PARSE_OPTS);
+            defer id_body.deinit();
+            const empty_res = ToolResult{
+                .id = id_body.value.id,
+                .result = .{},
+            };
+            var formatter = json.fmt(empty_res, STRINGIFY_OPTIONS);
+            try formatter.format(&res_writer.writer);
         },
+        else => try makeErrorJson(
+            &res_writer.writer,
+            alloc,
+            body,
+            methodJson.value.method,
+        ),
     }
     try stdout.print("RESPONSE: {s}\n", .{res_writer.written()});
     try stdout.flush();
@@ -416,6 +441,26 @@ fn handleConnectionImpl(alloc: Allocator, s: net.Stream, io: Io, dir: *Io.Dir, s
             .extra_headers = EXTRA_HEADERS ++ JSON_HEADER,
         },
     );
+}
+
+fn makeErrorJson(w: *Writer, alloc: Allocator, body: []u8, method: []const u8) !void {
+    const id_body = try json.parseFromSlice(IdOnly, alloc, body, JSON_PARSE_OPTS);
+    defer id_body.deinit();
+
+    var writer = Io.Writer.Allocating.init(alloc);
+    defer writer.deinit();
+
+    try writer.writer.print("Method Unavailable: {s}", .{method});
+
+    const error_json = ErrorRes{
+        .@"error" = .{
+            .code = -1,
+            .message = writer.written(),
+        },
+        .id = id_body.value.id,
+    };
+    var formatter = json.fmt(error_json, STRINGIFY_OPTIONS);
+    try formatter.format(w);
 }
 
 fn handleInitialize(w: *Writer, body: []u8, alloc: Allocator) !void {
@@ -556,9 +601,9 @@ fn V1ToolCallToMcpConvert(
 
     const res: ToolResult = parsed_result.value;
 
-    for (res.result.content) |content| {
-        output.writeAll(content.text) catch return ToolCallError.WritingToOutputFailed;
-    }
+    if(res.result.content) |content| for (content) |c| {
+        output.writeAll(c.text) catch return ToolCallError.WritingToOutputFailed;
+    };
 }
 
 fn requestLoadedModel(w: *Writer, alloc: Allocator, io: Io, origin: []const u8) !void {
@@ -1387,7 +1432,7 @@ fn handleCommand(w: *Writer, alloc: Allocator, io: Io, dir: *Io.Dir, body: []u8,
     defer response.deinit();
 
     const concat_args = try std.mem.concat(alloc, []const u8, &.{
-        &.{ program },
+        &.{program},
         arguments,
     });
     defer alloc.free(concat_args);
